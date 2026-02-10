@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4 (2026-02-10)
+- Performance-Optimierung: schneller Regex-Vorfilter für Text-Normalisierung.
+- Performance-Optimierung: Attribut-Selector wird gecacht.
+
 ## 1.3 (2026-02-08)
 - Icon-Größen korrigiert (48x48 und 128x128 Pixel).
 - HTML-Attribute werden normalisiert (title, alt, placeholder, aria-label, aria-describedby, aria-description, data-tooltip, data-title, data-original-title, label).
