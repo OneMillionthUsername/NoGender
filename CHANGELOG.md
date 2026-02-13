@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4 (2026-02-13)
+- Erkennung von geteilten Markern ueber mehrere Textknoten erweitert (z.B. "Poster : in").
+- Marker-Varianten fuer Mittelpunkte im Popup dokumentiert.
+- Marker-Erkennung auf case-insensitive erweitert (z.B. :in / :In).
+
 ## 1.3 (2026-02-08)
 - Icon-Größen korrigiert (48x48 und 128x128 Pixel).
 - HTML-Attribute werden normalisiert (title, alt, placeholder, aria-label, aria-describedby, aria-description, data-tooltip, data-title, data-original-title, label).

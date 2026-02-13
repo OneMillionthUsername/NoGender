@@ -83,14 +83,16 @@
   const STEM = "([\\p{L}]{2,})";
 
   const reGenderInfo = /\s*[\(\[]\s*(?:m|w|d)\s*(?:[\/|]\s*(?:m|w|d))+\s*[\)\]]/giu;
-  const reInnenWithMarker = new RegExp(`${STEM}\\s*(?:\\(|\\[)?${MARKER}(?:-)?innen(?:\\)|\\])?`, "gu");
-  const reInWithMarker = new RegExp(`${STEM}\\s*(?:\\(|\\[)?${MARKER}(?:-)?in(?:\\)|\\])?`, "gu");
-  const reInnenParen = new RegExp(`${STEM}\\s*\\(innen\\)`, "gu");
-  const reInParen = new RegExp(`${STEM}\\s*\\(in\\)`, "gu");
+  const reInnenWithMarker = new RegExp(`${STEM}\\s*(?:\\(|\\[)?${MARKER}(?:-)?innen(?:\\)|\\])?`, "giu");
+  const reInWithMarker = new RegExp(`${STEM}\\s*(?:\\(|\\[)?${MARKER}(?:-)?in(?:\\)|\\])?`, "giu");
+  const reInnenParen = new RegExp(`${STEM}\\s*\\(innen\\)`, "giu");
+  const reInParen = new RegExp(`${STEM}\\s*\\(in\\)`, "giu");
   const reBinnenIPlural = new RegExp(`(\\b[\\p{Ll}][\\p{L}]*)Innen\\b`, "gu");
   const reBinnenISingular = new RegExp(`(\\b[\\p{Ll}][\\p{L}]*)In\\b`, "gu");
-  const reInSlashInnen = new RegExp(`${STEM}In/Innen\\b`, "g");
+  const reInSlashInnen = new RegExp(`${STEM}In/Innen\\b`, "gi");
   const reAdjNWithMarker = new RegExp(`(\\b[\\p{L}]{2,})\\s*${MARKER}\\s*n\\b`, "gu");
+  const reStandaloneInMarker = new RegExp(`^\\s*(?:\\(|\\[)?${MARKER}\\s*(?:-)?\\s*in(?:\\)|\\])?\\s*$`, "iu");
+  const reStandaloneInnenMarker = new RegExp(`^\\s*(?:\\(|\\[)?${MARKER}\\s*(?:-)?\\s*innen(?:\\)|\\])?\\s*$`, "iu");
 
   function preserveCase(source, replacement) {
     if (!source) return replacement;
@@ -159,6 +161,8 @@
     if (!root) root = document.documentElement;
     if (!root) return 0;
 
+    normalizeSplitMarkers(root);
+
     const walker = document.createTreeWalker(
       root,
       NodeFilter.SHOW_TEXT,
@@ -185,6 +189,77 @@
     }
 
     return count;
+  }
+
+  function normalizeSplitMarkersInElement(element) {
+    if (!element || !element.childNodes || element.childNodes.length < 2) return;
+    if (element.nodeType === Node.ELEMENT_NODE && NON_TEXT_PARENTS.has(element.nodeName)) return;
+
+    const getInlineTextNode = (node) => {
+      if (!node) return null;
+      if (node.nodeType === Node.TEXT_NODE) {
+        return node.nodeValue ? { node, text: node.nodeValue } : null;
+      }
+      if (node.nodeType !== Node.ELEMENT_NODE) return null;
+      if (NON_TEXT_PARENTS.has(node.nodeName)) return null;
+
+      if (node.childNodes.length === 1 && node.firstChild.nodeType === Node.TEXT_NODE) {
+        const text = node.firstChild.nodeValue || "";
+        return text ? { node: node.firstChild, text } : null;
+      }
+
+      return null;
+    };
+
+    const nodes = Array.from(element.childNodes);
+    for (let i = 0; i < nodes.length - 1; i++) {
+      const currentInfo = getInlineTextNode(nodes[i]);
+      if (!currentInfo) continue;
+
+      const currentText = currentInfo.text;
+      if (!/[\\p{L}]{2,}\\s*$/u.test(currentText)) continue;
+
+      let markerText = "";
+      const markerNodes = [];
+      for (let j = i + 1; j < nodes.length && markerNodes.length < 4; j++) {
+        const markerInfo = getInlineTextNode(nodes[j]);
+        if (!markerInfo) break;
+
+        markerText += markerInfo.text;
+        markerNodes.push(markerInfo.node);
+
+        if (markerText.length > 12) break;
+
+        if (reStandaloneInMarker.test(markerText) || reStandaloneInnenMarker.test(markerText)) {
+          const combined = currentText + markerText;
+          const replaced = normalizeGenderedText(combined);
+          if (replaced !== combined) {
+            currentInfo.node.nodeValue = replaced;
+            markerNodes.forEach((node) => {
+              node.nodeValue = "";
+            });
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  function normalizeSplitMarkers(root) {
+    if (!root) root = document.documentElement;
+    if (!root) return;
+
+    if (root.nodeType === Node.ELEMENT_NODE) {
+      normalizeSplitMarkersInElement(root);
+    }
+
+    if (!root.querySelectorAll) return;
+    try {
+      const elements = root.querySelectorAll("*");
+      elements.forEach(normalizeSplitMarkersInElement);
+    } catch {
+      // Ignore query errors
+    }
   }
 
   function normalizeDocumentTitle(doc = document) {
@@ -367,6 +442,9 @@
             const original = node.nodeValue;
             const replaced = normalizeGenderedText(original);
             if (replaced !== original) node.nodeValue = replaced;
+            if (node.parentNode && node.parentNode.nodeType === Node.ELEMENT_NODE) {
+              normalizeSplitMarkers(node.parentNode);
+            }
           } else if (node.nodeType === Node.ELEMENT_NODE) {
             replaceGenderedLanguageInDOM(node);
             normalizeAllAttributes(node);
@@ -390,6 +468,9 @@
           const replaced = normalizeGenderedText(original);
           if (replaced !== original) {
             mutation.target.nodeValue = replaced;
+          }
+          if (mutation.target.parentNode && mutation.target.parentNode.nodeType === Node.ELEMENT_NODE) {
+            normalizeSplitMarkers(mutation.target.parentNode);
           }
         }
       }
