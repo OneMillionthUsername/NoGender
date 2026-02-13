@@ -93,6 +93,21 @@
   const reAdjNWithMarker = new RegExp(`(\\b[\\p{L}]{2,})\\s*${MARKER}\\s*n\\b`, "gu");
   const reStandaloneInMarker = new RegExp(`^\\s*(?:\\(|\\[)?${MARKER}\\s*(?:-)?\\s*in(?:\\)|\\])?\\s*$`, "iu");
   const reStandaloneInnenMarker = new RegExp(`^\\s*(?:\\(|\\[)?${MARKER}\\s*(?:-)?\\s*innen(?:\\)|\\])?\\s*$`, "iu");
+  const reAnyGenderPattern = new RegExp(
+    [
+      reGenderInfo.source,
+      reAdjNWithMarker.source,
+      reInSlashInnen.source,
+      reBinnenIPlural.source,
+      reBinnenISingular.source,
+      reInnenWithMarker.source,
+      reInWithMarker.source,
+      reInnenParen.source,
+      reInParen.source,
+    ].join("|"),
+    "iu"
+  );
+  const NORMALIZABLE_SELECTOR = NORMALIZABLE_ATTRIBUTES.map(attr => `[${attr}]`).join(',');
 
   function preserveCase(source, replacement) {
     if (!source) return replacement;
@@ -138,6 +153,8 @@
 
     // Remove soft hyphens / zero-width chars that split words in many news sites
     out = out.replace(/[\u00AD\u200B\u200C\u200D]/g, "");
+
+    if (!reAnyGenderPattern.test(out)) return out;
 
     out = out.replace(reGenderInfo, "");
 
@@ -354,11 +371,10 @@
     }
 
     // Normalize all descendants with normalizable attributes
-    const selector = NORMALIZABLE_ATTRIBUTES.map(attr => `[${attr}]`).join(',');
     if (!root.querySelectorAll) return;
 
     try {
-      const elements = root.querySelectorAll(selector);
+      const elements = root.querySelectorAll(NORMALIZABLE_SELECTOR);
       elements.forEach(normalizeElementAttributes);
     } catch {
       // Ignore query selector errors
