@@ -1,98 +1,280 @@
+// NoGender v1.5
+// Ersetzt künstlich gegenderte Formen (Ärzt:in, Lehrer*innen, …) durch natürliches Deutsch.
+// Natürliche Formen (Ärztin, Lehrerinnen, meine Freundinnen, …) werden NIE angetastet.
 (() => {
-  const IRREGULAR_SINGULAR = new Map([
-    ["ärzt", "arzt"],
-    ["anwält", "anwalt"],
-    ["wirt", "wirt"],
-    ["koch", "koch"],
-    ["pfleger", "pfleger"],
-    ["pädagog", "pädagog"],
-    ["psycholog", "psycholog"],
-    ["soziolog", "soziolog"],
-    ["bürger", "bürger"],
-    ["student", "student"],
-    ["praktikant", "praktikant"],
-    ["patient", "patient"],
-    ["teilnehmer", "teilnehmer"],
-    ["mitarbeiter", "mitarbeiter"],
-    ["aktivist", "aktivist"],
-    ["journalist", "journalist"],
-    ["kommunist", "kommunist"],
-    ["terrorist", "terrorist"],
-    ["politiker", "politiker"],
-    ["kollege", "kollege"],
-    ["freund", "freund"],
-    ["lehrer", "lehrer"],
-    ["schüler", "schüler"],
-    ["arbeiter", "arbeiter"],
-    ["leser", "leser"],
-    ["Elementarpädagog", "Elementarpädagoge"],
+  "use strict";
+
+  // ─────────────────────────────────────────────────────────────
+  // 0. KONFIGURATION – aus browser.storage.local laden
+  // ─────────────────────────────────────────────────────────────
+
+  const CACHE_KEY  = "nogender_wikt_cache";
+
+  const DEFAULT_CONFIG = {
+    enabled: true,
+    blockedDomains: [],
+  };
+
+  function isBlockedDomain(cfg) {
+    const host = location.hostname.replace(/^www\./, "");
+    return (cfg.blockedDomains || []).some(
+      d => host === d || host.endsWith("." + d)
+    );
+  }
+
+  const debug = (...args) => {
+    try {
+      browser.storage.local.get("nogender_debug").then(r => {
+        if (r.nogender_debug) console.log("[NoGender]", ...args);
+      });
+    } catch {}
+  };
+
+  // Auf Konfigurationsänderungen reagieren (z.B. Domain im Popup hinzugefügt)
+  browser.storage.onChanged.addListener((changes, area) => {
+    if (area !== "local" || !changes.nogender_config) return;
+    const newCfg = changes.nogender_config.newValue ?? DEFAULT_CONFIG;
+    if (!newCfg.enabled || isBlockedDomain(newCfg)) {
+      // Seite neu laden damit Addon sich zurückzieht
+      location.reload();
+    }
+  });
+
+  // Konfiguration laden, dann starten
+  browser.storage.local.get("nogender_config").then(result => {
+    const cfg = { ...DEFAULT_CONFIG, ...(result.nogender_config ?? {}) };
+
+    if (!cfg.enabled || isBlockedDomain(cfg)) {
+      console.log("[NoGender] Deaktiviert oder geblockt:", location.hostname);
+      return;
+    }
+
+    init();
+  }).catch(() => {
+    // Fallback: starten ohne Config
+    init();
+  });
+
+  // ─────────────────────────────────────────────────────────────
+  // 1. WIKTIONARY-LOOKUP & CACHE
+  // ─────────────────────────────────────────────────────────────
+
+  const wiktCache = (() => {
+    try {
+      const raw = sessionStorage.getItem(CACHE_KEY);
+      return raw ? new Map(JSON.parse(raw)) : new Map();
+    } catch { return new Map(); }
+  })();
+
+  function persistWiktCache() {
+    try {
+      if (wiktCache.size > 500) {
+        [...wiktCache.keys()].slice(0, wiktCache.size - 500).forEach(k => wiktCache.delete(k));
+      }
+      sessionStorage.setItem(CACHE_KEY, JSON.stringify([...wiktCache.entries()]));
+    } catch {}
+  }
+
+  async function fetchWiktionaryForms(lemma) {
+    const key = lemma.toLowerCase();
+    if (wiktCache.has(key)) return wiktCache.get(key);
+    wiktCache.set(key, null);
+
+    try {
+      const url =
+        "https://de.wiktionary.org/w/api.php?action=query&prop=revisions" +
+        "&rvprop=content&rvslots=main&format=json&origin=*&titles=" +
+        encodeURIComponent(lemma);
+      const resp = await fetch(url, { signal: AbortSignal.timeout(4000) });
+      if (!resp.ok) return null;
+      const data = await resp.json();
+      const page = Object.values(data?.query?.pages ?? {})[0];
+      if (!page || page.missing !== undefined) return null;
+      const wikitext =
+        page?.revisions?.[0]?.slots?.main?.["*"] ??
+        page?.revisions?.[0]?.["*"] ?? "";
+      const forms = parseWiktionaryFlexion(wikitext);
+      wiktCache.set(key, forms);
+      persistWiktCache();
+      return forms;
+    } catch {
+      wiktCache.set(key, null);
+      return null;
+    }
+  }
+
+  function parseWiktionaryFlexion(wikitext) {
+    const deSection =
+      wikitext.match(/==\s*Deutsch\s*==[\s\S]*?(?===\s*\w|\s*$)/)?.[0] ?? wikitext;
+    const tmpl = deSection.match(/\{\{Deutsch Substantiv Übersicht([\s\S]*?)\}\}/i);
+    if (!tmpl) return null;
+    const body = tmpl[1];
+    const get = key => {
+      const r = new RegExp("\\|\\s*" + key + "\\s*(?:1|\\*)?\\s*=\\s*([^|\\}\\n]+)", "i");
+      const m = body.match(r);
+      if (!m) return null;
+      return m[1].trim()
+        .replace(/^\[\[|\]\]$/g, "")
+        .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, "$2")
+        .replace(/'{2,}/g, "");
+    };
+    const forms = {
+      sg: { nom: get("Nominativ Singular") },
+      pl: { nom: get("Nominativ Plural") },
+    };
+    if (!forms.sg.nom && !forms.pl.nom) return null;
+    return forms;
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 2. LEXIKON (Fallback)
+  // ─────────────────────────────────────────────────────────────
+
+  const LEXICON = new Map([
+    ["ärzt",            { sg:"Arzt",               pl:"Ärzte"              }],
+    ["anwält",          { sg:"Anwalt",             pl:"Anwälte"            }],
+    ["wirt",            { sg:"Wirt",               pl:"Wirte"              }],
+    ["koch",            { sg:"Koch",               pl:"Köche"              }],
+    ["pfleger",         { sg:"Pfleger",            pl:"Pfleger"            }],
+    ["pädagog",         { sg:"Pädagoge",           pl:"Pädagogen"          }],
+    ["psycholog",       { sg:"Psychologe",         pl:"Psychologen"        }],
+    ["soziolog",        { sg:"Soziologe",          pl:"Soziologen"         }],
+    ["bürger",          { sg:"Bürger",             pl:"Bürger"             }],
+    ["student",         { sg:"Student",            pl:"Studenten"          }],
+    ["praktikant",      { sg:"Praktikant",         pl:"Praktikanten"       }],
+    ["patient",         { sg:"Patient",            pl:"Patienten"          }],
+    ["teilnehmer",      { sg:"Teilnehmer",         pl:"Teilnehmer"         }],
+    ["mitarbeiter",     { sg:"Mitarbeiter",        pl:"Mitarbeiter"        }],
+    ["aktivist",        { sg:"Aktivist",           pl:"Aktivisten"         }],
+    ["journalist",      { sg:"Journalist",         pl:"Journalisten"       }],
+    ["kommunist",       { sg:"Kommunist",          pl:"Kommunisten"        }],
+    ["terrorist",       { sg:"Terrorist",          pl:"Terroristen"        }],
+    ["politiker",       { sg:"Politiker",          pl:"Politiker"          }],
+    ["kollege",         { sg:"Kollege",            pl:"Kollegen"           }],
+    ["freund",          { sg:"Freund",             pl:"Freunde"            }],
+    ["lehrer",          { sg:"Lehrer",             pl:"Lehrer"             }],
+    ["schüler",         { sg:"Schüler",            pl:"Schüler"            }],
+    ["arbeiter",        { sg:"Arbeiter",           pl:"Arbeiter"           }],
+    ["leser",           { sg:"Leser",              pl:"Leser"              }],
+    ["richter",         { sg:"Richter",            pl:"Richter"            }],
+    ["autor",           { sg:"Autor",              pl:"Autoren"            }],
+    ["sprecher",        { sg:"Sprecher",           pl:"Sprecher"           }],
+    ["professor",       { sg:"Professor",          pl:"Professoren"        }],
+    ["direktor",        { sg:"Direktor",           pl:"Direktoren"         }],
+    ["nutzer",          { sg:"Nutzer",             pl:"Nutzer"             }],
+    ["entwickler",      { sg:"Entwickler",         pl:"Entwickler"         }],
+    ["forscher",        { sg:"Forscher",           pl:"Forscher"           }],
+    ["unternehmer",     { sg:"Unternehmer",        pl:"Unternehmer"        }],
+    ["wissenschaftler", { sg:"Wissenschaftler",    pl:"Wissenschaftler"    }],
+    ["elementarpädagog",{ sg:"Elementarpädagoge",  pl:"Elementarpädagogen" }],
   ]);
 
-  const IRREGULAR_PLURAL = new Map([
-    ["ärzt", "ärzte"],
-    ["anwält", "anwälte"],
-    ["wirt", "wirte"],
-    ["koch", "köche"],
-    ["pfleger", "pfleger"],
-    ["pädagog", "pädagogen"],
-    ["psycholog", "psychologen"],
-    ["soziolog", "soziologen"],
-    ["bürger", "bürger"],
-    ["student", "studenten"],
-    ["praktikant", "praktikanten"],
-    ["patient", "patienten"],
-    ["teilnehmer", "teilnehmer"],
-    ["mitarbeiter", "mitarbeiter"],
-    ["aktivist", "aktivisten"],
-    ["journalist", "journalisten"],
-    ["kommunist", "kommunisten"],
-    ["terrorist", "terroristen"],
-    ["politiker", "politiker"],
-    ["kollege", "kollegen"],
-    ["freund", "freunde"],
-    ["lehrer", "lehrer"],
-    ["schüler", "schüler"],
-    ["arbeiter", "arbeiter"],
-    ["leser", "leser"],
-    ["Elementarpädagog", "Elementarpädagogen"],
-  ]);
+  // ─────────────────────────────────────────────────────────────
+  // 3. HILFSFUNKTIONEN
+  // ─────────────────────────────────────────────────────────────
 
   const NON_TEXT_PARENTS = new Set([
-    "SCRIPT",
-    "STYLE",
-    "NOSCRIPT",
-    "TEXTAREA",
-    "CODE",
-    "PRE",
+    "SCRIPT","STYLE","NOSCRIPT","TEXTAREA","CODE","PRE","INPUT","SELECT",
   ]);
 
   const NORMALIZABLE_ATTRIBUTES = [
-    "title",
-    "alt",
-    "placeholder",
-    "aria-label",
-    "aria-describedby",
-    "aria-description",
-    "data-tooltip",
-    "data-title",
-    "data-original-title",
-    "label",
+    "title","alt","placeholder","aria-label","aria-describedby",
+    "aria-description","data-tooltip","data-title","data-original-title","label",
   ];
 
-  const MARKER = "[:*·•‧∙⋅⋆_/-]";
-  const STEM = "([\\p{L}]{2,})";
+  const NORMALIZABLE_SELECTOR = NORMALIZABLE_ATTRIBUTES.map(a => "[" + a + "]").join(",");
 
-  const reGenderInfo = /\s*[\(\[]\s*(?:m|w|d)\s*(?:[\/|]\s*(?:m|w|d))+\s*[\)\]]/giu;
-  const reInnenWithMarker = new RegExp(`${STEM}\\s*(?:\\(|\\[)?${MARKER}(?:-)?innen(?:\\)|\\])?`, "giu");
-  const reInWithMarker = new RegExp(`${STEM}\\s*(?:\\(|\\[)?${MARKER}(?:-)?in(?:\\)|\\])?`, "giu");
-  const reInnenParen = new RegExp(`${STEM}\\s*\\(innen\\)`, "giu");
-  const reInParen = new RegExp(`${STEM}\\s*\\(in\\)`, "giu");
-  const reBinnenIPlural = new RegExp(`(\\b[\\p{Ll}][\\p{L}]*)Innen\\b`, "gu");
-  const reBinnenISingular = new RegExp(`(\\b[\\p{Ll}][\\p{L}]*)In\\b`, "gu");
-  const reInSlashInnen = new RegExp(`${STEM}In/Innen\\b`, "gi");
-  const reAdjNWithMarker = new RegExp(`(\\b[\\p{L}]{2,})\\s*${MARKER}\\s*n\\b`, "gu");
-  const reStandaloneInMarker = new RegExp(`^\\s*(?:\\(|\\[)?${MARKER}\\s*(?:-)?\\s*in(?:\\)|\\])?\\s*$`, "iu");
-  const reStandaloneInnenMarker = new RegExp(`^\\s*(?:\\(|\\[)?${MARKER}\\s*(?:-)?\\s*innen(?:\\)|\\])?\\s*$`, "iu");
+  function isEditableNode(node) {
+    let el = node.nodeType === Node.TEXT_NODE ? node.parentNode : node;
+    while (el && el.nodeType === Node.ELEMENT_NODE) {
+      if (el.nodeName === "INPUT" || el.nodeName === "TEXTAREA") return true;
+      if (el.isContentEditable) return true;
+      el = el.parentNode;
+    }
+    return false;
+  }
+
+  function preserveCase(source, replacement) {
+    if (!source || !replacement) return replacement || "";
+    const isAllUpper =
+      source === source.toUpperCase() && source !== source.toLowerCase();
+    const isCapitalized =
+      source[0] === source[0].toUpperCase() &&
+      source.slice(1) === source.slice(1).toLowerCase();
+    if (isAllUpper) return replacement.toUpperCase();
+    if (isCapitalized) return replacement[0].toUpperCase() + replacement.slice(1);
+    return replacement;
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 4. FORMEN-AUFLÖSUNG
+  // ─────────────────────────────────────────────────────────────
+
+  function resolveForm(stem, isPlural, wiktForms) {
+    const lower = stem.toLowerCase();
+
+    if (wiktForms) {
+      const form = isPlural
+        ? (wiktForms.pl?.nom ?? wiktForms.sg?.nom)
+        : wiktForms.sg?.nom;
+      if (form) return preserveCase(stem, form);
+    }
+
+    const entry = LEXICON.get(lower);
+    if (entry) return preserveCase(stem, isPlural ? entry.pl : entry.sg);
+
+    // Regelbasierter Fallback
+    return isPlural ? toPlural(stem) : stem;
+  }
+
+  function toPlural(stem) {
+    if (/(er|el|en|chen|lein)$/i.test(stem)) return stem;
+    if (/e$/i.test(stem)) return stem + "n";
+    if (/[tdnrsl]$/i.test(stem)) return stem + "en";
+    return stem;
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 5. KOMPOSITA
+  // ─────────────────────────────────────────────────────────────
+
+  const SORTED_STEMS = [...LEXICON.keys()].sort((a, b) => b.length - a.length);
+
+  function splitCompound(word) {
+    const lower = word.toLowerCase();
+    for (const stem of SORTED_STEMS) {
+      if (lower.endsWith(stem) && lower.length > stem.length) {
+        return { prefix: word.slice(0, word.length - stem.length), stem };
+      }
+    }
+    return null;
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 6. REGEX-MUSTER
+  // ─────────────────────────────────────────────────────────────
+
+  const MARKER = "[:*·•‧∙⋅⋆_/\\-]";
+  const STEM   = "([\\p{L}]{2,})";
+
+  const reGenderInfo            = /\s*[\(\[]\s*(?:m|w|d)\s*(?:[\/|]\s*(?:m|w|d))+\s*[\)\]]/giu;
+  const reInnenWithMarker       = new RegExp(STEM + "\\s*(?:\\(|\\[)?" + MARKER + "(?:-)?innen(?:\\)|\\])?", "giu");
+  const reInWithMarker          = new RegExp(STEM + "\\s*(?:\\(|\\[)?" + MARKER + "(?:-)?in(?:\\)|\\])?",    "giu");
+  const reInnenParen            = new RegExp(STEM + "\\s*\\(innen\\)", "giu");
+  const reInParen               = new RegExp(STEM + "\\s*\\(in\\)",    "giu");
+  const reBinnenIPlural         = new RegExp("(\\b[\\p{Ll}][\\p{L}]*)Innen\\b", "gu");
+  const reBinnenISingular       = new RegExp("(\\b[\\p{Ll}][\\p{L}]*)In\\b",    "gu");
+  const reInSlashInnen          = new RegExp(STEM + "In/Innen\\b", "gi");
+  const reAdjNWithMarker        = new RegExp("(\\b[\\p{L}]{2,})\\s*" + MARKER + "\\s*n\\b", "gu");
+  const reStandaloneInMarker    = new RegExp("^\\s*(?:\\(|\\[)?" + MARKER + "\\s*(?:-)?\\s*in(?:\\)|\\])?\\s*$",    "iu");
+  const reStandaloneInnenMarker = new RegExp("^\\s*(?:\\(|\\[)?" + MARKER + "\\s*(?:-)?\\s*innen(?:\\)|\\])?\\s*$", "iu");
+
+  const FALSE_POSITIVES = new Set([
+    "heroin","heroine","protein","platine","marine","maschine","routine",
+    "medizin","vitamin","kantine","benzin","origin","satin","burin",
+    "cousin","raisin","sequin","goblin","penguin","kabine","disziplin",
+  ]);
+
   const reAnyGenderPattern = new RegExp(
     [
       reGenderInfo.source,
@@ -107,154 +289,160 @@
     ].join("|"),
     "iu"
   );
-  const NORMALIZABLE_SELECTOR = NORMALIZABLE_ATTRIBUTES.map(attr => `[${attr}]`).join(',');
 
-  function preserveCase(source, replacement) {
-    if (!source) return replacement;
-    const isUpper = source.toUpperCase() === source;
-    const isCapitalized = source[0] === source[0].toUpperCase() && source.slice(1) === source.slice(1).toLowerCase();
+  // ─────────────────────────────────────────────────────────────
+  // 7. NORMALISIERUNG
+  // ─────────────────────────────────────────────────────────────
 
-    if (isUpper) return replacement.toUpperCase();
-    if (isCapitalized) return replacement[0].toUpperCase() + replacement.slice(1);
-    return replacement;
+  function getWikt(stem) {
+    const lower = stem.toLowerCase();
+    const cap   = lower[0].toUpperCase() + lower.slice(1);
+    return wiktCache.get(lower) ?? wiktCache.get(cap) ?? null;
   }
 
-  function toMasculine(stem) {
-    const lower = stem.toLowerCase();
-    if (IRREGULAR_SINGULAR.has(lower)) {
-      return preserveCase(stem, IRREGULAR_SINGULAR.get(lower));
+  function replaceStem(stem, isPlural) {
+    if (FALSE_POSITIVES.has(stem.toLowerCase())) return stem;
+    const compound = splitCompound(stem);
+    if (compound) {
+      return compound.prefix + resolveForm(compound.stem, isPlural, getWikt(compound.stem));
     }
-    return stem;
-  }
-
-  function toPlural(stem) {
-    const lower = stem.toLowerCase();
-    if (IRREGULAR_PLURAL.has(lower)) {
-      return preserveCase(stem, IRREGULAR_PLURAL.get(lower));
-    }
-
-    if (/(er|el|en|chen|lein)$/i.test(stem)) {
-      return stem;
-    }
-    if (/e$/i.test(stem)) {
-      return stem + "n";
-    }
-    if (/[tdnrsll]$/i.test(stem)) {
-      return stem + "en";
-    }
-
-    return stem;
+    return resolveForm(stem, isPlural, getWikt(stem));
   }
 
   function normalizeGenderedText(text) {
     if (!text) return text;
-
-    let out = text;
-
-    // Remove soft hyphens / zero-width chars that split words in many news sites
-    out = out.replace(/[\u00AD\u200B\u200C\u200D]/g, "");
-
+    let out = text.replace(/[\u00AD\u200B\u200C\u200D]/g, "");
+    reAnyGenderPattern.lastIndex = 0;
     if (!reAnyGenderPattern.test(out)) return out;
 
-    out = out.replace(reGenderInfo, "");
+    const R = (re, fn) => { re.lastIndex = 0; out = out.replace(re, fn); };
 
-    out = out.replace(reAdjNWithMarker, (_, stem) => `${stem}n`);
-
-    out = out.replace(reInSlashInnen, (_, stem) => toPlural(stem));
-
-    out = out.replace(reBinnenIPlural, (_, stem) => toPlural(stem));
-    out = out.replace(reBinnenISingular, (_, stem) => toMasculine(stem));
-
-    out = out.replace(reInnenWithMarker, (_, stem) => toPlural(stem));
-    out = out.replace(reInWithMarker, (_, stem) => toMasculine(stem));
-
-    out = out.replace(reInnenParen, (_, stem) => toPlural(stem));
-    out = out.replace(reInParen, (_, stem) => toMasculine(stem));
+    R(reGenderInfo,      ()        => "");
+    R(reAdjNWithMarker,  (_, stem) => stem + "n");
+    R(reInSlashInnen,    (_, stem) => replaceStem(stem, true));
+    R(reBinnenIPlural,   (_, stem) => replaceStem(stem, true));
+    R(reBinnenISingular, (_, stem) => replaceStem(stem, false));
+    R(reInnenWithMarker, (_, stem) => replaceStem(stem, true));
+    R(reInWithMarker,    (_, stem) => replaceStem(stem, false));
+    R(reInnenParen,      (_, stem) => replaceStem(stem, true));
+    R(reInParen,         (_, stem) => replaceStem(stem, false));
 
     return out;
   }
 
-  function replaceGenderedLanguageInDOM(root) {
-    if (!root) root = document.documentElement;
-    if (!root) return 0;
+  async function normalizeGenderedTextAsync(text) {
+    if (!text) return text;
+    let tmp = text.replace(/[\u00AD\u200B\u200C\u200D]/g, "");
+    reAnyGenderPattern.lastIndex = 0;
+    if (!reAnyGenderPattern.test(tmp)) return text;
 
-    normalizeSplitMarkers(root);
+    const stems = new Set();
+    const collect = (_, stem) => { if (stem) stems.add(stem.toLowerCase()); return _; };
+    [reInnenWithMarker, reInWithMarker, reInnenParen, reInParen,
+     reBinnenIPlural, reBinnenISingular, reInSlashInnen].forEach(re => {
+      re.lastIndex = 0;
+      tmp.replace(re, collect);
+      re.lastIndex = 0;
+    });
 
-    const walker = document.createTreeWalker(
-      root,
-      NodeFilter.SHOW_TEXT,
-      {
-        acceptNode(node) {
-          if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
-          const parent = node.parentNode;
-          if (!parent || parent.nodeType !== Node.ELEMENT_NODE) return NodeFilter.FILTER_ACCEPT;
-          if (NON_TEXT_PARENTS.has(parent.nodeName)) return NodeFilter.FILTER_REJECT;
-          return NodeFilter.FILTER_ACCEPT;
-        },
-      }
-    );
+    await Promise.all([...stems].filter(Boolean).map(async s => {
+      if (wiktCache.has(s)) return;
+      await fetchWiktionaryForms(s[0].toUpperCase() + s.slice(1));
+    }));
 
-    let count = 0;
-    let node;
-    while ((node = walker.nextNode())) {
-      const original = node.nodeValue;
-      const replaced = normalizeGenderedText(original);
-      if (replaced !== original) {
-        node.nodeValue = replaced;
-        count++;
-      }
-    }
-
-    return count;
+    return normalizeGenderedText(text);
   }
 
+  // ─────────────────────────────────────────────────────────────
+  // 8. DOM-VERARBEITUNG
+  // ─────────────────────────────────────────────────────────────
+
+  const processed = new WeakSet();
+
+  const walkerFilter = {
+    acceptNode(node) {
+      if (!node.nodeValue?.trim()) return NodeFilter.FILTER_REJECT;
+      const p = node.parentNode;
+      if (!p || p.nodeType !== Node.ELEMENT_NODE) return NodeFilter.FILTER_ACCEPT;
+      if (NON_TEXT_PARENTS.has(p.nodeName)) return NodeFilter.FILTER_REJECT;
+      if (isEditableNode(node)) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  };
+
+  async function processBatch(nodes) {
+    for (const node of nodes) {
+      if (!node.isConnected || processed.has(node)) continue;
+      const original = node.nodeValue;
+      const replaced = await normalizeGenderedTextAsync(original);
+      if (replaced !== original) {
+        node.nodeValue = replaced;
+        debug("✓", JSON.stringify(original.trim()), "→", JSON.stringify(replaced.trim()));
+      }
+      processed.add(node);
+    }
+  }
+
+  async function replaceGenderedLanguageInDOM(root) {
+    if (!root) root = document.documentElement;
+    normalizeSplitMarkers(root);
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, walkerFilter);
+    const CHUNK = 60;
+    let batch = [], node;
+    while ((node = walker.nextNode())) {
+      if (processed.has(node)) continue;
+      batch.push(node);
+      if (batch.length >= CHUNK) {
+        await processBatch(batch);
+        batch = [];
+        await new Promise(r => setTimeout(r, 0));
+      }
+    }
+    if (batch.length) await processBatch(batch);
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 9. SPLIT-MARKER-NORMALISIERUNG
+  // ─────────────────────────────────────────────────────────────
+
+  const reStemEndFix = new RegExp("[\\p{L}]{2,}\\s*$", "u");
+
   function normalizeSplitMarkersInElement(element) {
-    if (!element || !element.childNodes || element.childNodes.length < 2) return;
+    if (!element?.childNodes || element.childNodes.length < 2) return;
     if (element.nodeType === Node.ELEMENT_NODE && NON_TEXT_PARENTS.has(element.nodeName)) return;
+    if (isEditableNode(element)) return;
 
-    const getInlineTextNode = (node) => {
+    const getInline = node => {
       if (!node) return null;
-      if (node.nodeType === Node.TEXT_NODE) {
+      if (node.nodeType === Node.TEXT_NODE)
         return node.nodeValue ? { node, text: node.nodeValue } : null;
-      }
-      if (node.nodeType !== Node.ELEMENT_NODE) return null;
-      if (NON_TEXT_PARENTS.has(node.nodeName)) return null;
-
+      if (node.nodeType !== Node.ELEMENT_NODE || NON_TEXT_PARENTS.has(node.nodeName)) return null;
       if (node.childNodes.length === 1 && node.firstChild.nodeType === Node.TEXT_NODE) {
-        const text = node.firstChild.nodeValue || "";
-        return text ? { node: node.firstChild, text } : null;
+        const t = node.firstChild.nodeValue || "";
+        return t ? { node: node.firstChild, text: t } : null;
       }
-
       return null;
     };
 
     const nodes = Array.from(element.childNodes);
     for (let i = 0; i < nodes.length - 1; i++) {
-      const currentInfo = getInlineTextNode(nodes[i]);
-      if (!currentInfo) continue;
-
-      const currentText = currentInfo.text;
-      if (!/[\\p{L}]{2,}\\s*$/u.test(currentText)) continue;
+      const cur = getInline(nodes[i]);
+      if (!cur || !reStemEndFix.test(cur.text)) continue;
 
       let markerText = "";
       const markerNodes = [];
       for (let j = i + 1; j < nodes.length && markerNodes.length < 4; j++) {
-        const markerInfo = getInlineTextNode(nodes[j]);
-        if (!markerInfo) break;
-
-        markerText += markerInfo.text;
-        markerNodes.push(markerInfo.node);
-
-        if (markerText.length > 12) break;
-
+        const mi = getInline(nodes[j]);
+        if (!mi) break;
+        markerText += mi.text;
+        markerNodes.push(mi.node);
+        if (markerText.length > 14) break;
         if (reStandaloneInMarker.test(markerText) || reStandaloneInnenMarker.test(markerText)) {
-          const combined = currentText + markerText;
+          const combined = cur.text + markerText;
           const replaced = normalizeGenderedText(combined);
           if (replaced !== combined) {
-            currentInfo.node.nodeValue = replaced;
-            markerNodes.forEach((node) => {
-              node.nodeValue = "";
-            });
+            cur.node.nodeValue = replaced;
+            markerNodes.forEach(n => { n.nodeValue = ""; });
           }
           break;
         }
@@ -264,278 +452,195 @@
 
   function normalizeSplitMarkers(root) {
     if (!root) root = document.documentElement;
-    if (!root) return;
-
-    if (root.nodeType === Node.ELEMENT_NODE) {
-      normalizeSplitMarkersInElement(root);
-    }
-
-    if (!root.querySelectorAll) return;
-    try {
-      const elements = root.querySelectorAll("*");
-      elements.forEach(normalizeSplitMarkersInElement);
-    } catch {
-      // Ignore query errors
-    }
+    if (root.nodeType === Node.ELEMENT_NODE) normalizeSplitMarkersInElement(root);
+    try { root.querySelectorAll?.("*").forEach(normalizeSplitMarkersInElement); } catch {}
   }
 
-  function normalizeDocumentTitle(doc = document) {
-    if (!doc || typeof doc.title !== "string") return;
-    const original = doc.title;
-    const replaced = normalizeGenderedText(original);
-    if (replaced !== original) doc.title = replaced;
-  }
-
-  function normalizeMetaTags(doc = document) {
-    if (!doc || !doc.head) return;
-    const metas = doc.head.querySelectorAll("meta[name], meta[property]");
-    metas.forEach((meta) => {
-      if (!meta.hasAttribute("content")) return;
-      const original = meta.getAttribute("content");
-      if (!original) return;
-      const replaced = normalizeGenderedText(original);
-      if (replaced !== original) meta.setAttribute("content", replaced);
-    });
-  }
-
-  const JSON_LD_SKIP_KEYS = new Set([
-    "@id",
-    "url",
-    "sameAs",
-    "contentUrl",
-    "embedUrl",
-    "thumbnailUrl",
-  ]);
-
-  function normalizeJsonLdValue(value, key) {
-    if (typeof value === "string") {
-      if (key && JSON_LD_SKIP_KEYS.has(key)) return value;
-      return normalizeGenderedText(value);
-    }
-
-    if (Array.isArray(value)) {
-      return value.map((entry) => normalizeJsonLdValue(entry));
-    }
-
-    if (value && typeof value === "object") {
-      const normalized = {};
-      for (const [childKey, childValue] of Object.entries(value)) {
-        normalized[childKey] = normalizeJsonLdValue(childValue, childKey);
-      }
-      return normalized;
-    }
-
-    return value;
-  }
-
-  function normalizeJsonLdScripts(root = document) {
-    if (!root) return;
-    const context = root.querySelectorAll ? root : root.ownerDocument;
-    if (!context || !context.querySelectorAll) return;
-    const scripts = context.querySelectorAll("script[type='application/ld+json']");
-    scripts.forEach((script) => {
-      const original = script.textContent;
-      if (!original || !original.trim()) return;
-      try {
-        const parsed = JSON.parse(original);
-        const normalized = normalizeJsonLdValue(parsed);
-        const replaced = JSON.stringify(normalized);
-        if (replaced !== original) script.textContent = replaced;
-      } catch {
-        // Ignore invalid JSON-LD.
-      }
-    });
-  }
+  // ─────────────────────────────────────────────────────────────
+  // 10. ATTRIBUTE, META, SVG, JSON-LD, SHADOW DOM
+  // ─────────────────────────────────────────────────────────────
 
   function normalizeElementAttributes(element) {
-    if (!element || !element.hasAttributes) return;
-
-    for (const attrName of NORMALIZABLE_ATTRIBUTES) {
-      if (!element.hasAttribute(attrName)) continue;
-      const original = element.getAttribute(attrName);
-      if (!original || !original.trim()) continue;
-      const replaced = normalizeGenderedText(original);
-      if (replaced !== original) {
-        element.setAttribute(attrName, replaced);
-      }
+    if (!element?.hasAttributes || isEditableNode(element)) return;
+    for (const attr of NORMALIZABLE_ATTRIBUTES) {
+      if (!element.hasAttribute(attr)) continue;
+      const orig = element.getAttribute(attr);
+      if (!orig?.trim()) continue;
+      const repl = normalizeGenderedText(orig);
+      if (repl !== orig) element.setAttribute(attr, repl);
     }
   }
 
   function normalizeAllAttributes(root) {
     if (!root) root = document.documentElement;
-    if (!root) return;
+    if (root.nodeType === Node.ELEMENT_NODE) normalizeElementAttributes(root);
+    try { root.querySelectorAll?.(NORMALIZABLE_SELECTOR).forEach(normalizeElementAttributes); } catch {}
+  }
 
-    // Normalize attributes on root element itself
-    if (root.nodeType === Node.ELEMENT_NODE) {
-      normalizeElementAttributes(root);
+  function normalizeDocumentTitle(doc = document) {
+    if (typeof doc?.title !== "string") return;
+    const r = normalizeGenderedText(doc.title);
+    if (r !== doc.title) doc.title = r;
+  }
+
+  function normalizeMetaTags(doc = document) {
+    doc?.head?.querySelectorAll("meta[name], meta[property]").forEach(meta => {
+      const orig = meta.getAttribute("content");
+      if (!orig) return;
+      const r = normalizeGenderedText(orig);
+      if (r !== orig) meta.setAttribute("content", r);
+    });
+  }
+
+  const JSON_LD_SKIP = new Set(["@id","url","sameAs","contentUrl","embedUrl","thumbnailUrl"]);
+
+  function normalizeJsonLdValue(v, k) {
+    if (typeof v === "string") return (k && JSON_LD_SKIP.has(k)) ? v : normalizeGenderedText(v);
+    if (Array.isArray(v)) return v.map(e => normalizeJsonLdValue(e));
+    if (v && typeof v === "object") {
+      const out = {};
+      for (const [ck, cv] of Object.entries(v)) out[ck] = normalizeJsonLdValue(cv, ck);
+      return out;
     }
+    return v;
+  }
 
-    // Normalize all descendants with normalizable attributes
-    if (!root.querySelectorAll) return;
-
-    try {
-      const elements = root.querySelectorAll(NORMALIZABLE_SELECTOR);
-      elements.forEach(normalizeElementAttributes);
-    } catch {
-      // Ignore query selector errors
-    }
+  function normalizeJsonLdScripts(root = document) {
+    const scope = root?.querySelectorAll ? root : root?.ownerDocument;
+    scope?.querySelectorAll("script[type='application/ld+json']").forEach(s => {
+      const orig = s.textContent;
+      if (!orig?.trim()) return;
+      try {
+        const r = JSON.stringify(normalizeJsonLdValue(JSON.parse(orig)));
+        if (r !== orig) s.textContent = r;
+      } catch {}
+    });
   }
 
   function normalizeSvgText(root) {
-    if (!root) root = document.documentElement;
-    if (!root || !root.querySelectorAll) return;
-
     try {
-      const textElements = root.querySelectorAll('text, tspan, textPath');
-      textElements.forEach((element) => {
-        // Process text content
-        const walker = document.createTreeWalker(
-          element,
-          NodeFilter.SHOW_TEXT,
-          null
-        );
-
-        let node;
-        while ((node = walker.nextNode())) {
-          const original = node.nodeValue;
-          if (!original) continue;
-          const replaced = normalizeGenderedText(original);
-          if (replaced !== original) {
-            node.nodeValue = replaced;
-          }
+      root?.querySelectorAll?.("text, tspan, textPath").forEach(el => {
+        const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
+        let n;
+        while ((n = w.nextNode())) {
+          const r = normalizeGenderedText(n.nodeValue || "");
+          if (r !== n.nodeValue) n.nodeValue = r;
         }
       });
-    } catch {
-      // Ignore SVG processing errors
-    }
+    } catch {}
   }
 
   function normalizeShadowDom(root) {
-    if (!root) return;
-
-    // Process shadow roots in this element and all descendants
-    const processElement = (element) => {
-      if (!element || element.nodeType !== Node.ELEMENT_NODE) return;
-
-      // If this element has a shadow root, process it
-      if (element.shadowRoot) {
-        replaceGenderedLanguageInDOM(element.shadowRoot);
-        normalizeAllAttributes(element.shadowRoot);
-        normalizeSvgText(element.shadowRoot);
-        normalizeJsonLdScripts(element.shadowRoot);
-
-        // Recursively process shadow DOM children
-        const children = element.shadowRoot.querySelectorAll('*');
-        children.forEach(processElement);
+    const proc = el => {
+      if (el?.shadowRoot) {
+        replaceGenderedLanguageInDOM(el.shadowRoot);
+        normalizeAllAttributes(el.shadowRoot);
+        normalizeSvgText(el.shadowRoot);
+        normalizeJsonLdScripts(el.shadowRoot);
+        el.shadowRoot.querySelectorAll("*").forEach(proc);
       }
     };
-
-    // Process root if it's an element
-    if (root.nodeType === Node.ELEMENT_NODE) {
-      processElement(root);
-    }
-
-    // Process all descendants
-    if (root.querySelectorAll) {
-      try {
-        const allElements = root.querySelectorAll('*');
-        allElements.forEach(processElement);
-      } catch {
-        // Ignore query errors
-      }
-    }
+    if (root?.nodeType === Node.ELEMENT_NODE) proc(root);
+    try { root?.querySelectorAll?.("*").forEach(proc); } catch {}
   }
 
+  // ─────────────────────────────────────────────────────────────
+  // 11. MUTATIONOBSERVER (debounced)
+  // ─────────────────────────────────────────────────────────────
+
   function observeGenderedLanguage(root) {
-    if (!root) root = document.documentElement;
-    if (!root || !root.ownerDocument) return;
+    if (!root?.ownerDocument) return;
 
-    const observer = new MutationObserver((mutations) => {
-      for (const mutation of mutations) {
-        // Handle added nodes
-        for (const node of mutation.addedNodes) {
-          if (node.nodeType === Node.TEXT_NODE) {
-            const original = node.nodeValue;
-            const replaced = normalizeGenderedText(original);
-            if (replaced !== original) node.nodeValue = replaced;
-            if (node.parentNode && node.parentNode.nodeType === Node.ELEMENT_NODE) {
-              normalizeSplitMarkers(node.parentNode);
-            }
-          } else if (node.nodeType === Node.ELEMENT_NODE) {
-            replaceGenderedLanguageInDOM(node);
-            normalizeAllAttributes(node);
-            normalizeSvgText(node);
-            normalizeJsonLdScripts(node);
-            normalizeShadowDom(node);
-          }
+    const pendingText  = new Set();
+    const pendingElems = new Set();
+    const pendingAttrs = new Set();
+    let rafId = null;
+
+    const flush = () => {
+      rafId = null;
+      for (const el of pendingAttrs) {
+        if (!isEditableNode(el)) normalizeElementAttributes(el);
+      }
+      pendingAttrs.clear();
+
+      const texts = [...pendingText];
+      const elems = [...pendingElems];
+      pendingText.clear();
+      pendingElems.clear();
+
+      (async () => {
+        if (texts.length) await processBatch(texts);
+        for (const el of elems) {
+          await replaceGenderedLanguageInDOM(el);
+          normalizeAllAttributes(el);
+          normalizeSvgText(el);
+          normalizeJsonLdScripts(el);
+          normalizeShadowDom(el);
         }
+      })();
+    };
 
-        // Handle attribute changes
-        if (mutation.type === 'attributes' && mutation.target.nodeType === Node.ELEMENT_NODE) {
-          const attrName = mutation.attributeName;
-          if (NORMALIZABLE_ATTRIBUTES.includes(attrName)) {
-            normalizeElementAttributes(mutation.target);
-          }
+    const schedule = () => { if (!rafId) rafId = requestAnimationFrame(flush); };
+
+    const observer = new MutationObserver(mutations => {
+      for (const m of mutations) {
+        for (const node of m.addedNodes) {
+          if (isEditableNode(node)) continue;
+          if (node.nodeType === Node.TEXT_NODE && !processed.has(node))
+            pendingText.add(node);
+          else if (node.nodeType === Node.ELEMENT_NODE && !processed.has(node))
+            pendingElems.add(node);
         }
-
-        // Handle character data changes
-        if (mutation.type === 'characterData' && mutation.target.nodeType === Node.TEXT_NODE) {
-          const original = mutation.target.nodeValue;
-          const replaced = normalizeGenderedText(original);
-          if (replaced !== original) {
-            mutation.target.nodeValue = replaced;
-          }
-          if (mutation.target.parentNode && mutation.target.parentNode.nodeType === Node.ELEMENT_NODE) {
-            normalizeSplitMarkers(mutation.target.parentNode);
-          }
+        if (m.type === "characterData" &&
+            m.target.nodeType === Node.TEXT_NODE &&
+            !isEditableNode(m.target) &&
+            !processed.has(m.target)) {
+          pendingText.add(m.target);
+        }
+        if (m.type === "attributes" &&
+            m.target.nodeType === Node.ELEMENT_NODE &&
+            !isEditableNode(m.target) &&
+            NORMALIZABLE_ATTRIBUTES.includes(m.attributeName)) {
+          pendingAttrs.add(m.target);
         }
       }
+      if (pendingText.size || pendingElems.size || pendingAttrs.size) schedule();
     });
 
     observer.observe(root, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: NORMALIZABLE_ATTRIBUTES,
-      characterData: true,
+      childList: true, subtree: true, attributes: true,
+      attributeFilter: NORMALIZABLE_ATTRIBUTES, characterData: true,
     });
   }
 
   function observeHeadChanges(doc = document) {
-    if (!doc || !doc.head) return;
-    const headObserver = new MutationObserver(() => {
+    if (!doc?.head) return;
+    new MutationObserver(() => {
       normalizeDocumentTitle(doc);
       normalizeMetaTags(doc);
       normalizeJsonLdScripts(doc);
-    });
-
-    headObserver.observe(doc.head, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      characterData: true,
+    }).observe(doc.head, {
+      childList: true, subtree: true, attributes: true, characterData: true,
       attributeFilter: ["content"],
     });
   }
 
-  function startGenderReplacement() {
-    // Use documentElement to process EVERYTHING (head + body + all)
-    const root = document.documentElement;
+  // ─────────────────────────────────────────────────────────────
+  // 12. INIT (wird nach Config-Laden aufgerufen)
+  // ─────────────────────────────────────────────────────────────
 
-    replaceGenderedLanguageInDOM(root);
+  async function init() {
+    const root = document.documentElement;
+    await replaceGenderedLanguageInDOM(root);
     normalizeAllAttributes(root);
     normalizeSvgText(root);
     normalizeShadowDom(root);
-    observeGenderedLanguage(root);
     normalizeDocumentTitle();
     normalizeMetaTags();
     normalizeJsonLdScripts();
+    observeGenderedLanguage(root);
     observeHeadChanges();
+    debug("NoGender v1.5 aktiv auf:", location.hostname);
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", startGenderReplacement, { once: true });
-  } else {
-    startGenderReplacement();
-  }
 })();

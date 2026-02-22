@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
   "name": "NoGender",
-  "version": "1.4",
-  "description": "Entfernt Gendersprache von Webseiten. Läuft vollständig lokal.",
+  "version": "1.5",
+  "description": "Entfernt Gendersprache von Webseiten. Läuft vollständig lokal, mit optionalem Wiktionary-Lookup.",
   "icons": {
     "48": "icons/iconng_48.png",
     "128": "icons/iconng_128.png"
@@ -15,10 +15,13 @@
       "all_frames": true
     }
   ],
-  "permissions": [],
+  "permissions": [
+    "tabs",
+    "storage"
+  ],
   "browser_action": {
     "default_popup": "popup.html",
-    "default_title": "NoGender Feedback"
+    "default_title": "NoGender"
   },
   "browser_specific_settings": {
     "gecko": {
