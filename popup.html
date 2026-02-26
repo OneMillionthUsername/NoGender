@@ -157,6 +157,16 @@
       padding: 3px 7px; font-size: 11px; color: #555;
     }
 
+    .warn-box {
+      display: flex; gap: 9px; align-items: flex-start;
+      background: #fffbe6; border: 1px solid #f0d060;
+      border-radius: 6px; padding: 9px 11px;
+      font-size: 11px; color: #7a5c00; line-height: 1.5;
+      margin-top: 2px;
+    }
+    .warn-icon { font-size: 15px; flex-shrink: 0; margin-top: 1px; }
+    .warn-box strong { font-weight: 600; display: block; margin-bottom: 2px; }
+
     .email-box {
       font-family: monospace; background: #f5f5f5;
       padding: 5px 8px; border-radius: 4px;
@@ -201,7 +211,7 @@
 <div class="header">
   <span style="font-size:20px">🚫</span>
   <span class="header-title">NoGender</span>
-  <span class="header-version">v1.5</span>
+  <span class="header-version">v1.5.3</span>
 </div>
 
 <!-- Ein/Aus -->
@@ -273,6 +283,26 @@
       Unbekannte Wörter werden anonym über de.wiktionary.org nachgeschlagen
       und lokal im Browser zwischengespeichert (sessionStorage).
     </p>
+  </div>
+</div>
+
+<!-- Hinweis Code & KI-Chats -->
+<div class="section">
+  <div class="section-title">Hinweis: Code &amp; KI-Chats</div>
+  <div class="section-body">
+    <div class="warn-box">
+      <span class="warn-icon">⚠️</span>
+      <div>
+        <strong>Auf Seiten mit Code oder KI-generierten Inhalten deaktivieren</strong>
+        NoGender kann Terminal-Befehle, Codebeispiele oder KI-Antworten verändern –
+        z.&nbsp;B. wird <code>tail&nbsp;-n&nbsp;100</code> möglicherweise falsch erkannt.
+        Wer solche Inhalte blind kopiert und ausführt, riskiert unerwartetes Verhalten.
+        <br><br>
+        Empfehlung: NoGender auf KI-Chat-Seiten (ChatGPT, Claude, Gemini&nbsp;…),
+        Dokumentations- und Entwickler-Plattformen per Blockliste ausschließen
+        oder die Erweiterung dort über den Schalter oben deaktivieren.
+      </div>
+    </div>
   </div>
 </div>
 

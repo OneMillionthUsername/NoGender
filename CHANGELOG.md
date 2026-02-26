@@ -1,4 +1,25 @@
 # Changelog
+## 1.5.3 (2026-02-26)
+
+### Fehlerbehebungen
+- **Popup CSS**: Styling-Probleme im Popup behoben.
+- **Email-Funktion**: Fehler in der Email-Funktionalität korrigiert.
+
+## 1.5.2 (2026-02-26)
+
+### Änderungen
+- **Bindestrich als Gender-Marker entfernt**: `-in` / `-innen` / `-n` werden nicht mehr als Gendering-Marker erkannt. Der Bindestrich ist als Gendering-Form äußerst selten, kollidiert aber häufig mit normalen deutschen Komposita (`Standard-installationen`), CLI-Flags (`tail -n`, `git log -n`), URLs und Code-Schnipseln. Die Regex-Patterns sind dadurch wieder deutlich einfacher und robuster.
+- **Warnung im Popup**: Neuer Hinweis-Block, der empfiehlt, NoGender auf Seiten mit Code oder KI-generierten Inhalten (ChatGPT, Claude, Gemini …) zu deaktivieren oder per Blockliste auszuschließen, um unbeabsichtigte Veränderungen an Terminal-Befehlen und Codebeispielen zu vermeiden.
+
+---
+
+## 1.5.1 (2026-02-26)
+
+### Fehlerbehebungen
+- **Falsch-Positiv: CLI-Flags (`tail -n`, `git log -n`)**: `reAdjNWithMarker` enthielt den Bindestrich im Marker-Zeichensatz. Dadurch wurde z.B. `tail -n 100` zu `tailn 100` verfälscht. Bindestrich aus diesem Pattern entfernt; Adjektiv-Gendering (z.B. `eine*n`) funktioniert weiterhin.
+- **Falsch-Positiv: Wörter mit Bindestrich-Präfix (`Standard-installationen`)**: `reInWithMarker` und `reInnenWithMarker` hatten kein Wortende-Anchoring beim Bindestrich-Marker. Dadurch wurde `Standard-in[stallationen]` fälschlicherweise als Gendering erkannt. Pattern in zwei Alternations aufgeteilt: Nicht-Bindestrich-Marker (`:`, `*`, `_` …) behalten das alte Verhalten (nötig für Komposita wie `Bundesärzt:innenkammer`); beim Bindestrich-Marker wird ein Lookahead `(?![\p{Ll}])` ergänzt, der sicherstellt dass nach `in`/`innen` kein Kleinbuchstabe folgt. `Lehrer-in` und `Lehrer-innen` werden weiterhin korrekt erkannt.
+
+---
 
 ## 1.5 (2026-02-22)
 

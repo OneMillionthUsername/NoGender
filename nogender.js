@@ -1,4 +1,4 @@
-// NoGender v1.5
+// NoGender v1.5.2
 // Ersetzt künstlich gegenderte Formen (Ärzt:in, Lehrer*innen, …) durch natürliches Deutsch.
 // Natürliche Formen (Ärztin, Lehrerinnen, meine Freundinnen, …) werden NIE angetastet.
 (() => {
@@ -254,7 +254,10 @@
   // 6. REGEX-MUSTER
   // ─────────────────────────────────────────────────────────────
 
-  const MARKER = "[:*·•‧∙⋅⋆_/\\-]";
+  // Bindestrich wird bewusst NICHT als Gender-Marker unterstützt:
+  // Er ist als Gendering-Form extrem selten, kollidiert aber häufig mit normalen
+  // deutschen Komposita (Standard-installationen), CLI-Flags (tail -n), URLs und Code.
+  const MARKER = "[:*·•‧∙⋅⋆_/]";
   const STEM   = "([\\p{L}]{2,})";
 
   const reGenderInfo            = /\s*[\(\[]\s*(?:m|w|d)\s*(?:[\/|]\s*(?:m|w|d))+\s*[\)\]]/giu;
@@ -317,15 +320,15 @@
 
     const R = (re, fn) => { re.lastIndex = 0; out = out.replace(re, fn); };
 
-    R(reGenderInfo,      ()        => "");
-    R(reAdjNWithMarker,  (_, stem) => stem + "n");
-    R(reInSlashInnen,    (_, stem) => replaceStem(stem, true));
-    R(reBinnenIPlural,   (_, stem) => replaceStem(stem, true));
-    R(reBinnenISingular, (_, stem) => replaceStem(stem, false));
-    R(reInnenWithMarker, (_, stem) => replaceStem(stem, true));
-    R(reInWithMarker,    (_, stem) => replaceStem(stem, false));
-    R(reInnenParen,      (_, stem) => replaceStem(stem, true));
-    R(reInParen,         (_, stem) => replaceStem(stem, false));
+    R(reGenderInfo,      ()            => "");
+    R(reAdjNWithMarker,  (_, stem)     => stem + "n");
+    R(reInSlashInnen,    (_, stem)     => replaceStem(stem, true));
+    R(reBinnenIPlural,   (_, stem)     => replaceStem(stem, true));
+    R(reBinnenISingular, (_, stem)     => replaceStem(stem, false));
+    R(reInnenWithMarker, (_, stem)     => replaceStem(stem, true));
+    R(reInWithMarker,    (_, stem)     => replaceStem(stem, false));
+    R(reInnenParen,      (_, stem)     => replaceStem(stem, true));
+    R(reInParen,         (_, stem)     => replaceStem(stem, false));
 
     return out;
   }
@@ -640,7 +643,7 @@
     normalizeJsonLdScripts();
     observeGenderedLanguage(root);
     observeHeadChanges();
-    debug("NoGender v1.5 aktiv auf:", location.hostname);
+    debug("NoGender v1.5.3 aktiv auf:", location.hostname);
   }
 
 })();
