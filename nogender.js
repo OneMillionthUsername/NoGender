@@ -1,4 +1,4 @@
-// NoGender v1.5.2
+// NoGender v1.6
 // Ersetzt künstlich gegenderte Formen (Ärzt:in, Lehrer*innen, …) durch natürliches Deutsch.
 // Natürliche Formen (Ärztin, Lehrerinnen, meine Freundinnen, …) werden NIE angetastet.
 (() => {
@@ -15,6 +15,8 @@
     blockedDomains: [],
   };
 
+  let debugEnabled = false;
+
   function isBlockedDomain(cfg) {
     const host = location.hostname.replace(/^www\./, "");
     return (cfg.blockedDomains || []).some(
@@ -24,15 +26,23 @@
 
   const debug = (...args) => {
     try {
-      browser.storage.local.get("nogender_debug").then(r => {
-        if (r.nogender_debug) console.log("[NoGender]", ...args);
-      });
+      if (debugEnabled) console.log("[NoGender]", ...args);
     } catch {}
   };
 
+  browser.storage.local.get("nogender_debug").then(r => {
+    debugEnabled = !!r.nogender_debug;
+  }).catch(() => {});
+
   // Auf Konfigurationsänderungen reagieren (z.B. Domain im Popup hinzugefügt)
   browser.storage.onChanged.addListener((changes, area) => {
-    if (area !== "local" || !changes.nogender_config) return;
+    if (area !== "local") return;
+
+    if (changes.nogender_debug) {
+      debugEnabled = !!changes.nogender_debug.newValue;
+    }
+
+    if (!changes.nogender_config) return;
     const newCfg = changes.nogender_config.newValue ?? DEFAULT_CONFIG;
     if (!newCfg.enabled || isBlockedDomain(newCfg)) {
       // Seite neu laden damit Addon sich zurückzieht
@@ -455,8 +465,25 @@
 
   function normalizeSplitMarkers(root) {
     if (!root) root = document.documentElement;
-    if (root.nodeType === Node.ELEMENT_NODE) normalizeSplitMarkersInElement(root);
-    try { root.querySelectorAll?.("*").forEach(normalizeSplitMarkersInElement); } catch {}
+    const candidates = new Set();
+
+    const addCandidate = el => {
+      if (!el || el.nodeType !== Node.ELEMENT_NODE) return;
+      if (NON_TEXT_PARENTS.has(el.nodeName)) return;
+      candidates.add(el);
+    };
+
+    if (root.nodeType === Node.ELEMENT_NODE) addCandidate(root);
+
+    try {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+      let n;
+      while ((n = walker.nextNode())) {
+        addCandidate(n.parentNode);
+      }
+    } catch {}
+
+    candidates.forEach(normalizeSplitMarkersInElement);
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -558,18 +585,29 @@
     const pendingElems = new Set();
     const pendingAttrs = new Set();
     let rafId = null;
+    let isFlushing = false;
+
+    const getTopLevelElements = elements => {
+      const list = [...elements].filter(el => el?.isConnected);
+      if (list.length < 2) return list;
+      return list.filter(el => !list.some(other => other !== el && other.contains(el)));
+    };
 
     const flush = () => {
       rafId = null;
+      if (isFlushing) return;
+
       for (const el of pendingAttrs) {
         if (!isEditableNode(el)) normalizeElementAttributes(el);
       }
       pendingAttrs.clear();
 
       const texts = [...pendingText];
-      const elems = [...pendingElems];
+      const elems = getTopLevelElements(pendingElems);
       pendingText.clear();
       pendingElems.clear();
+
+      isFlushing = true;
 
       (async () => {
         if (texts.length) await processBatch(texts);
@@ -580,7 +618,10 @@
           normalizeJsonLdScripts(el);
           normalizeShadowDom(el);
         }
-      })();
+      })().finally(() => {
+        isFlushing = false;
+        if (pendingText.size || pendingElems.size || pendingAttrs.size) schedule();
+      });
     };
 
     const schedule = () => { if (!rafId) rafId = requestAnimationFrame(flush); };
@@ -643,7 +684,7 @@
     normalizeJsonLdScripts();
     observeGenderedLanguage(root);
     observeHeadChanges();
-    debug("NoGender v1.5.3 aktiv auf:", location.hostname);
+    debug("NoGender v1.6 aktiv auf:", location.hostname);
   }
 
 })();

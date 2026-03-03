@@ -1,4 +1,13 @@
 # Changelog
+## 1.6 (2026-03-03)
+
+### Änderungen
+- **Performance-Optimierung**: Debug-Flag wird gecacht statt pro Treffer aus `storage` gelesen; Mutation-Flushes laufen nicht mehr überlappend; bei dynamischen DOM-Updates werden verschachtelte Subtrees dedupliziert, um doppelte Arbeit zu vermeiden.
+- **Split-Marker-Verarbeitung gezielter**: Kandidaten für die Marker-Normalisierung werden textnah gesammelt statt pauschal über alle Elemente iteriert.
+- **Popup-Hinweis präzisiert**: Die frühere pauschale Deaktivierungs-Empfehlung für Code/KI-Seiten wurde in einen Vorsichtshinweis geändert. Bekannte CLI-Fehler gelten als behoben; es bleibt ein Hinweis auf seltene False-Positives beim Kopieren von Code.
+
+---
+
 ## 1.5.3 (2026-02-26)
 
 ### Fehlerbehebungen
