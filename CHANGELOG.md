@@ -1,4 +1,11 @@
 # Changelog
+## 1.6.1 (2026-03-28)
+
+### Fehlerbehebungen
+- **False-Positive bei Schrägstrich-Komposita**: Wörter wie „Schule/Inspektion" oder „Außen/Innenraum" wurden fälschlich als Gendering erkannt, weil `/` als Marker gewertet und das folgende Wort ab „In…" als Suffix interpretiert wurde. Die Patterns `reInnenWithMarker` und `reInWithMarker` erzwingen jetzt per negativem Lookahead `(?![\p{L}])`, dass nach „in"/„innen" kein weiterer Buchstabe folgt.
+
+---
+
 ## 1.6 (2026-03-03)
 
 ### Änderungen
