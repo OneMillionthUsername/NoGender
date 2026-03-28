@@ -271,8 +271,8 @@
   const STEM   = "([\\p{L}]{2,})";
 
   const reGenderInfo            = /\s*[\(\[]\s*(?:m|w|d)\s*(?:[\/|]\s*(?:m|w|d))+\s*[\)\]]/giu;
-  const reInnenWithMarker       = new RegExp(STEM + "\\s*(?:\\(|\\[)?" + MARKER + "(?:-)?innen(?:\\)|\\])?", "giu");
-  const reInWithMarker          = new RegExp(STEM + "\\s*(?:\\(|\\[)?" + MARKER + "(?:-)?in(?:\\)|\\])?",    "giu");
+  const reInnenWithMarker       = new RegExp(STEM + "\\s*(?:\\(|\\[)?" + MARKER + "(?:-)?innen(?:\\)|\\])?(?![\\p{L}])", "giu");
+  const reInWithMarker          = new RegExp(STEM + "\\s*(?:\\(|\\[)?" + MARKER + "(?:-)?in(?:\\)|\\])?(?![\\p{L}])",    "giu");
   const reInnenParen            = new RegExp(STEM + "\\s*\\(innen\\)", "giu");
   const reInParen               = new RegExp(STEM + "\\s*\\(in\\)",    "giu");
   const reBinnenIPlural         = new RegExp("(\\b[\\p{Ll}][\\p{L}]*)Innen\\b", "gu");
