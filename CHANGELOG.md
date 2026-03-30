@@ -1,4 +1,12 @@
 # Changelog
+## 1.7 (2026-03-30)
+
+### Neue Funktion
+- **Kompositum-Erkennung nach Gender-Marker**: Gegenderte Komposita wie „Architekt:Innenbüros" oder „Lehrer*Innenzimmer" werden jetzt korrekt erkannt und zu „Architektenbüros" bzw. „Lehrerzimmer" aufgelöst. Bisher verhinderte der Lookahead nach „innen", dass angehängte Wortteile erkannt wurden.
+- **Personenstamm-Prüfung (`isLikelyPersonStem`)**: Bevor ein Kompositum ersetzt wird, prüft die Extension per LEXICON, Kompositazerlegung und Wiktionary-Cache, ob der Stamm eine Personenbezeichnung ist. Dadurch bleiben nicht-gegenderte Formen wie „Außen/Innenräume" oder „Außen:Innenbereich" unverändert.
+
+---
+
 ## 1.6.1 (2026-03-28)
 
 ### Fehlerbehebungen

@@ -1,4 +1,4 @@
-// NoGender v1.6.1
+// NoGender v1.7
 // Ersetzt künstlich gegenderte Formen (Ärzt:in, Lehrer*innen, …) durch natürliches Deutsch.
 // Natürliche Formen (Ärztin, Lehrerinnen, meine Freundinnen, …) werden NIE angetastet.
 (() => {
@@ -141,42 +141,99 @@
   // ─────────────────────────────────────────────────────────────
 
   const LEXICON = new Map([
-    ["ärzt",            { sg:"Arzt",               pl:"Ärzte"              }],
-    ["anwält",          { sg:"Anwalt",             pl:"Anwälte"            }],
-    ["wirt",            { sg:"Wirt",               pl:"Wirte"              }],
+    // Umlaut-Plurale
+    ["ärzt",            { sg:"Ärztin",             pl:"Ärzte"              }],
+    ["anwält",          { sg:"Anwältin",           pl:"Anwälte"            }],
     ["koch",            { sg:"Koch",               pl:"Köche"              }],
-    ["pfleger",         { sg:"Pfleger",            pl:"Pfleger"            }],
+    // -e/-en-Plurale (Stamm ≠ Singular oder irregulärer Plural)
+    ["bauer",           { sg:"Bauer",              pl:"Bauern"             }],
+    ["bäuer",           { sg:"Bäuerin",            pl:"Bauern"             }],
+    ["köch",            { sg:"Köchin",             pl:"Köche"              }],
+    ["nachbar",         { sg:"Nachbar",            pl:"Nachbarn"           }],
+    ["kollege",         { sg:"Kollege",            pl:"Kollegen"           }],
+    ["freund",          { sg:"Freund",             pl:"Freunde"            }],
+    ["wirt",            { sg:"Wirt",               pl:"Wirte"              }],
+    // -oge/-ogen
     ["pädagog",         { sg:"Pädagoge",           pl:"Pädagogen"          }],
     ["psycholog",       { sg:"Psychologe",         pl:"Psychologen"        }],
     ["soziolog",        { sg:"Soziologe",          pl:"Soziologen"         }],
-    ["bürger",          { sg:"Bürger",             pl:"Bürger"             }],
-    ["student",         { sg:"Student",            pl:"Studenten"          }],
+    ["biologe",         { sg:"Biologe",            pl:"Biologen"           }],
+    ["philolog",        { sg:"Philologe",          pl:"Philologen"         }],
+    ["elementarpädagog",{ sg:"Elementarpädagoge",  pl:"Elementarpädagogen" }],
+    // -ekt/-eten/-eut/-ot (schwache Deklination)
+    ["architekt",       { sg:"Architekt",          pl:"Architekten"        }],
+    ["athlet",          { sg:"Athlet",             pl:"Athleten"           }],
+    ["therapeut",       { sg:"Therapeut",          pl:"Therapeuten"        }],
+    ["pilot",           { sg:"Pilot",              pl:"Piloten"            }],
+    // -at/-aten
+    ["kandidat",        { sg:"Kandidat",           pl:"Kandidaten"         }],
+    ["diplomat",        { sg:"Diplomat",            pl:"Diplomaten"         }],
+    ["soldat",          { sg:"Soldat",             pl:"Soldaten"           }],
+    ["demokrat",        { sg:"Demokrat",           pl:"Demokraten"         }],
+    // -ant/-anten
     ["praktikant",      { sg:"Praktikant",         pl:"Praktikanten"       }],
+    ["migrant",         { sg:"Migrant",            pl:"Migranten"          }],
+    ["demonstrant",     { sg:"Demonstrant",        pl:"Demonstranten"      }],
+    // -ent/-enten
+    ["student",         { sg:"Student",            pl:"Studenten"          }],
     ["patient",         { sg:"Patient",            pl:"Patienten"          }],
-    ["teilnehmer",      { sg:"Teilnehmer",         pl:"Teilnehmer"         }],
-    ["mitarbeiter",     { sg:"Mitarbeiter",        pl:"Mitarbeiter"        }],
+    ["dozent",          { sg:"Dozent",             pl:"Dozenten"           }],
+    ["absolvent",       { sg:"Absolvent",          pl:"Absolventen"        }],
+    ["referent",        { sg:"Referent",           pl:"Referenten"         }],
+    ["produzent",       { sg:"Produzent",          pl:"Produzenten"        }],
+    // -ist/-isten
     ["aktivist",        { sg:"Aktivist",           pl:"Aktivisten"         }],
     ["journalist",      { sg:"Journalist",         pl:"Journalisten"       }],
     ["kommunist",       { sg:"Kommunist",          pl:"Kommunisten"        }],
     ["terrorist",       { sg:"Terrorist",          pl:"Terroristen"        }],
+    ["jurist",          { sg:"Jurist",             pl:"Juristen"           }],
+    ["polizist",        { sg:"Polizist",           pl:"Polizisten"         }],
+    ["spezialist",      { sg:"Spezialist",         pl:"Spezialisten"       }],
+    // -eur/-eure (toPlural versagt hier: würde -euren liefern)
+    ["ingenieur",       { sg:"Ingenieur",          pl:"Ingenieure"         }],
+    ["redakteur",       { sg:"Redakteur",          pl:"Redakteure"         }],
+    ["friseur",         { sg:"Friseur",            pl:"Friseure"           }],
+    ["monteur",         { sg:"Monteur",            pl:"Monteure"           }],
+    // -or/-oren
+    ["autor",           { sg:"Autor",              pl:"Autoren"            }],
+    ["professor",       { sg:"Professor",          pl:"Professoren"        }],
+    ["direktor",        { sg:"Direktor",           pl:"Direktoren"         }],
+    ["moderator",       { sg:"Moderator",          pl:"Moderatoren"        }],
+    ["administrator",   { sg:"Administrator",      pl:"Administratoren"    }],
+    // -er/-er (gleicher Plural, häufig gegendert)
+    ["pfleger",         { sg:"Pfleger",            pl:"Pfleger"            }],
+    ["bürger",          { sg:"Bürger",             pl:"Bürger"             }],
+    ["teilnehmer",      { sg:"Teilnehmer",         pl:"Teilnehmer"         }],
+    ["mitarbeiter",     { sg:"Mitarbeiter",        pl:"Mitarbeiter"        }],
     ["politiker",       { sg:"Politiker",          pl:"Politiker"          }],
-    ["kollege",         { sg:"Kollege",            pl:"Kollegen"           }],
-    ["freund",          { sg:"Freund",             pl:"Freunde"            }],
     ["lehrer",          { sg:"Lehrer",             pl:"Lehrer"             }],
     ["schüler",         { sg:"Schüler",            pl:"Schüler"            }],
     ["arbeiter",        { sg:"Arbeiter",           pl:"Arbeiter"           }],
     ["leser",           { sg:"Leser",              pl:"Leser"              }],
     ["richter",         { sg:"Richter",            pl:"Richter"            }],
-    ["autor",           { sg:"Autor",              pl:"Autoren"            }],
     ["sprecher",        { sg:"Sprecher",           pl:"Sprecher"           }],
-    ["professor",       { sg:"Professor",          pl:"Professoren"        }],
-    ["direktor",        { sg:"Direktor",           pl:"Direktoren"         }],
     ["nutzer",          { sg:"Nutzer",             pl:"Nutzer"             }],
     ["entwickler",      { sg:"Entwickler",         pl:"Entwickler"         }],
     ["forscher",        { sg:"Forscher",           pl:"Forscher"           }],
     ["unternehmer",     { sg:"Unternehmer",        pl:"Unternehmer"        }],
     ["wissenschaftler", { sg:"Wissenschaftler",    pl:"Wissenschaftler"    }],
-    ["elementarpädagog",{ sg:"Elementarpädagoge",  pl:"Elementarpädagogen" }],
+    ["berater",         { sg:"Berater",            pl:"Berater"            }],
+    ["fahrer",          { sg:"Fahrer",             pl:"Fahrer"             }],
+    ["händler",         { sg:"Händler",            pl:"Händler"            }],
+    ["künstler",        { sg:"Künstler",           pl:"Künstler"           }],
+    ["musiker",         { sg:"Musiker",            pl:"Musiker"            }],
+    ["trainer",         { sg:"Trainer",            pl:"Trainer"            }],
+    ["bewohner",        { sg:"Bewohner",           pl:"Bewohner"           }],
+    ["besucher",        { sg:"Besucher",           pl:"Besucher"           }],
+    ["einwohner",       { sg:"Einwohner",          pl:"Einwohner"         }],
+    ["eigentümer",      { sg:"Eigentümer",         pl:"Eigentümer"         }],
+    ["verbraucher",     { sg:"Verbraucher",        pl:"Verbraucher"        }],
+    ["gründer",         { sg:"Gründer",            pl:"Gründer"            }],
+    ["helfer",          { sg:"Helfer",             pl:"Helfer"             }],
+    ["spieler",         { sg:"Spieler",            pl:"Spieler"            }],
+    ["wähler",          { sg:"Wähler",             pl:"Wähler"             }],
+    ["gegner",          { sg:"Gegner",             pl:"Gegner"             }],
+    ["partner",         { sg:"Partner",            pl:"Partner"            }],
   ]);
 
   // ─────────────────────────────────────────────────────────────
@@ -260,6 +317,14 @@
     return null;
   }
 
+  function isLikelyPersonStem(stem) {
+    const lower = stem.toLowerCase();
+    if (LEXICON.has(lower)) return true;
+    if (splitCompound(stem)) return true;
+    if (getWikt(stem)) return true;
+    return false;
+  }
+
   // ─────────────────────────────────────────────────────────────
   // 6. REGEX-MUSTER
   // ─────────────────────────────────────────────────────────────
@@ -279,6 +344,7 @@
   const reBinnenISingular       = new RegExp("(\\b[\\p{Ll}][\\p{L}]*)In\\b",    "gu");
   const reInSlashInnen          = new RegExp(STEM + "In/Innen\\b", "gi");
   const reAdjNWithMarker        = new RegExp("(\\b[\\p{L}]{2,})\\s*" + MARKER + "\\s*n\\b", "gu");
+  const reInnenCompound         = new RegExp(STEM + "\\s*(?:\\(|\\[)?" + MARKER + "(?:-)?innen([\\p{Ll}][\\p{L}]*)", "giu");
   const reStandaloneInMarker    = new RegExp("^\\s*(?:\\(|\\[)?" + MARKER + "\\s*(?:-)?\\s*in(?:\\)|\\])?\\s*$",    "iu");
   const reStandaloneInnenMarker = new RegExp("^\\s*(?:\\(|\\[)?" + MARKER + "\\s*(?:-)?\\s*innen(?:\\)|\\])?\\s*$", "iu");
 
@@ -295,6 +361,7 @@
       reInSlashInnen.source,
       reBinnenIPlural.source,
       reBinnenISingular.source,
+      reInnenCompound.source,
       reInnenWithMarker.source,
       reInWithMarker.source,
       reInnenParen.source,
@@ -335,6 +402,10 @@
     R(reInSlashInnen,    (_, stem)     => replaceStem(stem, true));
     R(reBinnenIPlural,   (_, stem)     => replaceStem(stem, true));
     R(reBinnenISingular, (_, stem)     => replaceStem(stem, false));
+    R(reInnenCompound,   (m, stem, suffix) => {
+      if (!isLikelyPersonStem(stem)) return m;
+      return replaceStem(stem, true) + suffix;
+    });
     R(reInnenWithMarker, (_, stem)     => replaceStem(stem, true));
     R(reInWithMarker,    (_, stem)     => replaceStem(stem, false));
     R(reInnenParen,      (_, stem)     => replaceStem(stem, true));
@@ -351,7 +422,7 @@
 
     const stems = new Set();
     const collect = (_, stem) => { if (stem) stems.add(stem.toLowerCase()); return _; };
-    [reInnenWithMarker, reInWithMarker, reInnenParen, reInParen,
+    [reInnenCompound, reInnenWithMarker, reInWithMarker, reInnenParen, reInParen,
      reBinnenIPlural, reBinnenISingular, reInSlashInnen].forEach(re => {
       re.lastIndex = 0;
       tmp.replace(re, collect);
@@ -684,7 +755,7 @@
     normalizeJsonLdScripts();
     observeGenderedLanguage(root);
     observeHeadChanges();
-    debug("NoGender v1.6.1 aktiv auf:", location.hostname);
+    debug("NoGender v1.7 aktiv auf:", location.hostname);
   }
 
 })();
