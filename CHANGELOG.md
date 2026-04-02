@@ -1,5 +1,5 @@
 # Changelog
-## 1.7 (2026-04-02)
+## 1.7.1 (2026-04-02)
 
 ### Neue Funktionen
 - **Kompositum-Erkennung nach Gender-Marker**: Gegenderte Komposita wie „Architekt:Innenbüros" oder „Lehrer*Innenzimmer" werden jetzt korrekt erkannt und zu „Architektenbüros" bzw. „Lehrerzimmer" aufgelöst. Bisher verhinderte der Lookahead nach „innen", dass angehängte Wortteile erkannt wurden.

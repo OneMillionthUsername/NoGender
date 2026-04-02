@@ -1,4 +1,4 @@
-// NoGender v1.7
+// NoGender v1.7.1
 // Ersetzt künstlich gegenderte Formen (Ärzt:in, Lehrer*innen, …) durch natürliches Deutsch.
 // Natürliche Formen (Ärztin, Lehrerinnen, meine Freundinnen, …) werden NIE angetastet.
 (() => {
@@ -764,7 +764,7 @@
     normalizeJsonLdScripts();
     observeGenderedLanguage(root);
     observeHeadChanges();
-    debug("NoGender v1.7 aktiv auf:", location.hostname);
+    debug("NoGender v1.7.1 aktiv auf:", location.hostname);
   }
 
 })();
