@@ -708,9 +708,18 @@
         }
         if (m.type === "characterData" &&
             m.target.nodeType === Node.TEXT_NODE &&
-            !isEditableNode(m.target) &&
-            !processed.has(m.target)) {
-          pendingText.add(m.target);
+            !isEditableNode(m.target)) {
+          if (processed.has(m.target)) {
+            // Text wurde extern geändert (z.B. React-Hydration) –
+            // erneut prüfen ob Gendering vorhanden
+            reAnyGenderPattern.lastIndex = 0;
+            if (reAnyGenderPattern.test(m.target.nodeValue || "")) {
+              processed.delete(m.target);
+              pendingText.add(m.target);
+            }
+          } else {
+            pendingText.add(m.target);
+          }
         }
         if (m.type === "attributes" &&
             m.target.nodeType === Node.ELEMENT_NODE &&
