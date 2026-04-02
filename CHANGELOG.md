@@ -1,9 +1,14 @@
 # Changelog
-## 1.7 (2026-03-30)
+## 1.7 (2026-04-02)
 
-### Neue Funktion
+### Neue Funktionen
 - **Kompositum-Erkennung nach Gender-Marker**: Gegenderte Komposita wie „Architekt:Innenbüros" oder „Lehrer*Innenzimmer" werden jetzt korrekt erkannt und zu „Architektenbüros" bzw. „Lehrerzimmer" aufgelöst. Bisher verhinderte der Lookahead nach „innen", dass angehängte Wortteile erkannt wurden.
 - **Personenstamm-Prüfung (`isLikelyPersonStem`)**: Bevor ein Kompositum ersetzt wird, prüft die Extension per LEXICON, Kompositazerlegung und Wiktionary-Cache, ob der Stamm eine Personenbezeichnung ist. Dadurch bleiben nicht-gegenderte Formen wie „Außen/Innenräume" oder „Außen:Innenbereich" unverändert.
+- **LEXICON stark erweitert**: Von 29 auf 81 Einträge. Neue Kategorien: -eur (Ingenieur, Redakteur), -ekt (Architekt), -at (Kandidat, Diplomat), -oge (Biologe), sowie viele häufig gegenderte -er/-or/-ist-Formen. Umlaut-Stämme (bäuer→Bäuerin, köch→Köchin) werden korrekt auf die natürliche Femininform zurückgeführt.
+
+### Fehlerbehebungen
+- **React-Hydration-Bug auf SPAs (LinkedIn, XING u.a.)**: Wenn React nach der Extension den Text zurück auf die gegenderte Form überschrieb, wurde der Knoten nicht erneut verarbeitet, da er im `processed`-WeakSet stand. Der MutationObserver prüft jetzt bei `characterData`-Änderungen, ob erneut Gendering vorliegt, und verarbeitet den Knoten ggf. nochmal.
+- **Umlaut-Singular korrekt**: „Ärzt:in", „Köch:in", „Bäuer:in", „Anwält:in" werden jetzt zur natürlichen Femininform aufgelöst (Ärztin, Köchin, Bäuerin, Anwältin) statt zum grammatisch falschen Maskulinum.
 
 ---
 
