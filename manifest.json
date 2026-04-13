@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "NoGender",
-  "version": "1.7.1",
+  "version": "1.7.2",
   "description": "Entfernt Gendersprache von Webseiten. Läuft vollständig lokal, mit optionalem Wiktionary-Lookup.",
   "icons": {
     "48": "icons/iconng_48.png",

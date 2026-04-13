@@ -1,4 +1,11 @@
 # Changelog
+## 1.7.2 (2026-04-13)
+
+### Fehlerbehebungen
+- **Leerzeichen nach Gender-Marker**: Formen wie „Mieter: innen" oder „Mieter: in" (mit Leerzeichen nach dem Doppelpunkt) werden jetzt korrekt erkannt. Betrifft `reInnenWithMarker`, `reInWithMarker` und `reInnenCompound`.
+
+---
+
 ## 1.7.1 (2026-04-02)
 
 ### Neue Funktionen
