@@ -1,4 +1,4 @@
-// NoGender v1.7.2
+// NoGender v1.8
 // Ersetzt künstlich gegenderte Formen (Ärzt:in, Lehrer*innen, …) durch natürliches Deutsch.
 // Natürliche Formen (Ärztin, Lehrerinnen, meine Freundinnen, …) werden NIE angetastet.
 (() => {
@@ -8,6 +8,7 @@
   // 0. KONFIGURATION – aus browser.storage.local laden
   // ─────────────────────────────────────────────────────────────
 
+  const VERSION    = "1.8";
   const CACHE_KEY  = "nogender_wikt_cache";
 
   const DEFAULT_CONFIG = {
@@ -16,6 +17,7 @@
   };
 
   let debugEnabled = false;
+  let wasActive    = false;
 
   function isBlockedDomain(cfg) {
     const host = location.hostname.replace(/^www\./, "");
@@ -43,9 +45,13 @@
     }
 
     if (!changes.nogender_config) return;
-    const newCfg = changes.nogender_config.newValue ?? DEFAULT_CONFIG;
-    if (!newCfg.enabled || isBlockedDomain(newCfg)) {
-      // Seite neu laden damit Addon sich zurückzieht
+    const newCfg = { ...DEFAULT_CONFIG, ...(changes.nogender_config.newValue ?? {}) };
+    const willBeActive = newCfg.enabled && !isBlockedDomain(newCfg);
+    // Reload bei Toggle in beide Richtungen (aktiv↔inaktiv), damit die Seite
+    // beim Deaktivieren in den Original-Zustand zurückkehrt und beim
+    // Aktivieren die Erweiterung überhaupt greift. Änderungen an anderen
+    // Domains der Blockliste lösen keinen Reload aus.
+    if (willBeActive !== wasActive) {
       location.reload();
     }
   });
@@ -55,13 +61,15 @@
     const cfg = { ...DEFAULT_CONFIG, ...(result.nogender_config ?? {}) };
 
     if (!cfg.enabled || isBlockedDomain(cfg)) {
-      console.log("[NoGender] Deaktiviert oder geblockt:", location.hostname);
+      debug("Deaktiviert oder geblockt:", location.hostname);
       return;
     }
 
+    wasActive = true;
     init();
   }).catch(() => {
     // Fallback: starten ohne Config
+    wasActive = true;
     init();
   });
 
@@ -85,32 +93,58 @@
     } catch {}
   }
 
+  let persistTimer = null;
+  function schedulePersist() {
+    if (persistTimer) clearTimeout(persistTimer);
+    persistTimer = setTimeout(() => {
+      persistTimer = null;
+      persistWiktCache();
+    }, 2000);
+  }
+  // Vor BFCache/Unload ausstehenden Persist flushen, damit nichts verloren geht.
+  window.addEventListener("pagehide", () => {
+    if (persistTimer) { clearTimeout(persistTimer); persistTimer = null; }
+    persistWiktCache();
+  }, { capture: true });
+
+  // Dedupliziert parallele Fetches für dasselbe Lemma. Ohne das würden
+  // zweitrangige Aufrufer den `null`-Sentinel des ersten Calls lesen und
+  // die später eintreffenden Forms nicht verwenden.
+  const wiktInFlight = new Map();
+
   async function fetchWiktionaryForms(lemma) {
     const key = lemma.toLowerCase();
     if (wiktCache.has(key)) return wiktCache.get(key);
-    wiktCache.set(key, null);
+    if (wiktInFlight.has(key)) return wiktInFlight.get(key);
 
-    try {
-      const url =
-        "https://de.wiktionary.org/w/api.php?action=query&prop=revisions" +
-        "&rvprop=content&rvslots=main&format=json&origin=*&titles=" +
-        encodeURIComponent(lemma);
-      const resp = await fetch(url, { signal: AbortSignal.timeout(4000) });
-      if (!resp.ok) return null;
-      const data = await resp.json();
-      const page = Object.values(data?.query?.pages ?? {})[0];
-      if (!page || page.missing !== undefined) return null;
-      const wikitext =
-        page?.revisions?.[0]?.slots?.main?.["*"] ??
-        page?.revisions?.[0]?.["*"] ?? "";
-      const forms = parseWiktionaryFlexion(wikitext);
-      wiktCache.set(key, forms);
-      persistWiktCache();
-      return forms;
-    } catch {
-      wiktCache.set(key, null);
-      return null;
-    }
+    const promise = (async () => {
+      try {
+        const url =
+          "https://de.wiktionary.org/w/api.php?action=query&prop=revisions" +
+          "&rvprop=content&rvslots=main&format=json&origin=*&titles=" +
+          encodeURIComponent(lemma);
+        const resp = await fetch(url, { signal: AbortSignal.timeout(4000) });
+        if (!resp.ok) { wiktCache.set(key, null); return null; }
+        const data = await resp.json();
+        const page = Object.values(data?.query?.pages ?? {})[0];
+        if (!page || page.missing !== undefined) { wiktCache.set(key, null); return null; }
+        const wikitext =
+          page?.revisions?.[0]?.slots?.main?.["*"] ??
+          page?.revisions?.[0]?.["*"] ?? "";
+        const forms = parseWiktionaryFlexion(wikitext);
+        wiktCache.set(key, forms);
+        schedulePersist();
+        return forms;
+      } catch {
+        wiktCache.set(key, null);
+        return null;
+      } finally {
+        wiktInFlight.delete(key);
+      }
+    })();
+
+    wiktInFlight.set(key, promise);
+    return promise;
   }
 
   function parseWiktionaryFlexion(wikitext) {
@@ -245,7 +279,7 @@
   ]);
 
   const NORMALIZABLE_ATTRIBUTES = [
-    "title","alt","placeholder","aria-label","aria-describedby",
+    "title","alt","placeholder","aria-label",
     "aria-description","data-tooltip","data-title","data-original-title","label",
   ];
 
@@ -336,14 +370,19 @@
   const STEM   = "([\\p{L}]{2,})";
 
   const reGenderInfo            = /\s*[\(\[]\s*(?:m|w|d)\s*(?:[\/|]\s*(?:m|w|d))+\s*[\)\]]/giu;
-  const reInnenWithMarker       = new RegExp(STEM + "\\s*(?:\\(|\\[)?" + MARKER + "\\s?(?:-)?innen(?:\\)|\\])?(?![\\p{L}])", "giu");
-  const reInWithMarker          = new RegExp(STEM + "\\s*(?:\\(|\\[)?" + MARKER + "\\s?(?:-)?in(?:\\)|\\])?(?![\\p{L}])",    "giu");
+  // Lookahead schließt neben Buchstaben auch `/` und `_` aus, damit URLs wie
+  // "foo.de/in/impressum" und Slugs wie "foo_in_bar" nicht fälschlich als
+  // Gendering gewertet werden. Marker-Set selbst bleibt unverändert.
+  const reInnenWithMarker       = new RegExp(STEM + "\\s*(?:\\(|\\[)?" + MARKER + "\\s?(?:-)?innen(?:\\)|\\])?(?![\\p{L}\\/_])", "giu");
+  const reInWithMarker          = new RegExp(STEM + "\\s*(?:\\(|\\[)?" + MARKER + "\\s?(?:-)?in(?:\\)|\\])?(?![\\p{L}\\/_])",    "giu");
   const reInnenParen            = new RegExp(STEM + "\\s*\\(innen\\)", "giu");
   const reInParen               = new RegExp(STEM + "\\s*\\(in\\)",    "giu");
   const reBinnenIPlural         = new RegExp("(\\b[\\p{Ll}][\\p{L}]*)Innen\\b", "gu");
   const reBinnenISingular       = new RegExp("(\\b[\\p{Ll}][\\p{L}]*)In\\b",    "gu");
   const reInSlashInnen          = new RegExp(STEM + "In/Innen\\b", "gi");
-  const reAdjNWithMarker        = new RegExp("(\\b[\\p{L}]{2,})\\s*" + MARKER + "\\s*n\\b", "gu");
+  // `(?!\/)` verhindert False-Positives in URLs/Pfaden wie "path/n/foo".
+  // Bei `_` greift bereits die Wortgrenze `\b` (weil `_` in `\w` enthalten ist).
+  const reAdjNWithMarker        = new RegExp("(\\b[\\p{L}]{2,})\\s*" + MARKER + "\\s*n\\b(?!\\/)", "gu");
   const reInnenCompound         = new RegExp(STEM + "\\s*(?:\\(|\\[)?" + MARKER + "\\s?(?:-)?innen([\\p{Ll}][\\p{L}]*)", "giu");
   const reStandaloneInMarker    = new RegExp("^\\s*(?:\\(|\\[)?" + MARKER + "\\s*(?:-)?\\s*in(?:\\)|\\])?\\s*$",    "iu");
   const reStandaloneInnenMarker = new RegExp("^\\s*(?:\\(|\\[)?" + MARKER + "\\s*(?:-)?\\s*innen(?:\\)|\\])?\\s*$", "iu");
@@ -354,6 +393,12 @@
     "cousin","raisin","sequin","goblin","penguin","kabine","disziplin",
   ]);
 
+  // Vorfilter für normalizeGenderedText. Wird NUR für test() genutzt –
+  // eventuelle False-Positives hier sind harmlos, weil die echten Patterns
+  // danach laufen und nichts finden. Das `i`-Flag unterwandert bewusst die
+  // Case-Sensitivität von \p{Ll} in den reBinnenI*-Subpatterns; es darf
+  // hier NICHT entfernt werden, sonst brechen die markerbehafteten
+  // Patterns die ursprünglich mit `giu` definiert waren.
   const reAnyGenderPattern = new RegExp(
     [
       reGenderInfo.source,
@@ -461,7 +506,9 @@
       const replaced = await normalizeGenderedTextAsync(original);
       if (replaced !== original) {
         node.nodeValue = replaced;
-        debug("✓", JSON.stringify(original.trim()), "→", JSON.stringify(replaced.trim()));
+        if (debugEnabled) {
+          debug("✓", JSON.stringify(original.trim()), "→", JSON.stringify(replaced.trim()));
+        }
       }
       processed.add(node);
     }
@@ -764,7 +811,7 @@
     normalizeJsonLdScripts();
     observeGenderedLanguage(root);
     observeHeadChanges();
-    debug("NoGender v1.7.1 aktiv auf:", location.hostname);
+    debug("NoGender v" + VERSION + " aktiv auf:", location.hostname);
   }
 
 })();

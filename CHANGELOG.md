@@ -1,4 +1,24 @@
 # Changelog
+## 1.8 (2026-04-16)
+
+### Fehlerbehebungen
+- **URL- und Slug-Schutz**: Die Marker `/` und `_` in `reInWithMarker`, `reInnenWithMarker` und `reAdjNWithMarker` führten zu False-Positives in URLs (`foo.de/in/impressum`), Pfaden (`path/n/foo`) und Slugs (`foo_in_bar`). Der Lookahead wurde erweitert um auch diese Zeichen als Wortfortsetzung zu werten – das jeweilige Gendering-Suffix wird nur noch am tatsächlichen Wortende erkannt. Die Marker selbst bleiben erhalten, damit echte Schreibweisen wie `Lehrer/in` weiterhin funktionieren.
+- **Reload-Logik bei Status-Wechsel**: Bisher lud die Seite nur beim Deaktivieren oder Blocken automatisch neu. Wurde eine Domain wieder von der Blockliste entfernt oder die Erweiterung reaktiviert, blieb der alte Zustand bis zum manuellen Reload bestehen. Jetzt erkennt die Extension den Wechsel in beide Richtungen über ein internes `wasActive`-Flag; Änderungen an anderen Domains der Blockliste lösen keinen unnötigen Reload aus.
+- **aria-describedby nicht mehr normalisiert**: Das Attribut enthält Element-IDs, keinen lesbaren Text. Es wurde aus `NORMALIZABLE_ATTRIBUTES` entfernt.
+- **Versions-Drift im Debug-Log**: Der Init-Log zeigte noch `v1.7.1`, obwohl Manifest und Popup bereits auf `1.7.2` waren. Die Version wird jetzt aus einer einzigen `VERSION`-Konstante im Content-Script gelesen.
+- **Konsistente Debug-Ausgaben**: Der „Deaktiviert oder geblockt"-Log lief bisher immer über `console.log`, unabhängig vom Debug-Schalter. Jetzt läuft er über `debug()`.
+
+### Performance
+- **Fetch-Deduplizierung**: Parallele Wiktionary-Lookups für denselben Stamm wurden bisher doppelt ausgelöst, und zweite Aufrufer bekamen den `null`-Sentinel des ersten Calls – die später eintreffenden Formen gingen verloren. Eine in-flight-Promise-Map stellt jetzt sicher, dass mehrere Aufrufer auf dasselbe Ergebnis warten.
+- **Debounced Cache-Persist**: `persistWiktCache` schrieb bisher bei jedem neuen Stamm die komplette Map synchron in den `sessionStorage`. Bei vielen Lookups hintereinander summiert sich das. Schreibvorgänge werden jetzt per `schedulePersist()` gebündelt (2 s Debounce) und per `pagehide`-Listener vor dem Verlassen der Seite geflusht.
+- **Guard vor JSON.stringify im Debug-Pfad**: `processBatch` serialisierte Vorher/Nachher-Text auch dann, wenn Debug deaktiviert war. Ein `if (debugEnabled)` vor dem Call spart die Arbeit auf Seiten mit vielen Ersetzungen.
+
+### Wartung
+- **Zentrale `VERSION`-Konstante** in `nogender.js` ersetzt das hart kodierte Versions-String-Literal im Debug-Log. Manifest und Popup-HTML tragen die Version wie bisher separat.
+- **Kommentar zu `reAnyGenderPattern`**: Das zusammengeführte Prefilter-Pattern nutzt bewusst das `i`-Flag, obwohl einzelne Subpatterns (`reBinnenIPlural`/`reBinnenISingular`) case-sensitiv definiert sind. Ein Kommentar im Code schützt vor versehentlichem Entfernen.
+
+---
+
 ## 1.7.2 (2026-04-13)
 
 ### Fehlerbehebungen
