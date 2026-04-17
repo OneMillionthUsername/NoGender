@@ -1,4 +1,11 @@
 # Changelog
+## 1.8.2 (2026-04-18)
+
+### Neue Funktionen
+- **`:e`-Adjektivformen**: Gegenderte Formen mit `-:e`-Suffix werden jetzt erkannt und zum Maskulinum aufgelöst – z. B. „ein:e" → „ein", „kein:e" → „kein".
+
+---
+
 ## 1.8.1 (2026-04-18)
 
 ### Neue Funktionen

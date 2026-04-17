@@ -8,7 +8,7 @@
   // 0. KONFIGURATION – aus browser.storage.local laden
   // ─────────────────────────────────────────────────────────────
 
-  const VERSION    = "1.8.1";
+  const VERSION    = "1.8.2";
   const CACHE_KEY  = "nogender_wikt_cache";
 
   const DEFAULT_CONFIG = {
@@ -383,6 +383,7 @@
   // `(?!\/)` verhindert False-Positives in URLs/Pfaden wie "path/n/foo".
   // Bei `_` greift bereits die Wortgrenze `\b` (weil `_` in `\w` enthalten ist).
   const reAdjNWithMarker        = new RegExp("(\\b[\\p{L}]{2,})\\s*" + MARKER + "\\s*n\\b(?!\\/)", "gu");
+  const reAdjEWithMarker        = new RegExp("(\\b[\\p{L}]{2,})\\s*" + MARKER + "\\s*e\\b(?!\\/)", "gu");
   const reAdjRWithMarker        = new RegExp("(\\b[\\p{L}]{2,})\\s*" + MARKER + "\\s*r\\b(?!\\/)", "gu");
   const reInnenCompound         = new RegExp(STEM + "\\s*(?:\\(|\\[)?" + MARKER + "\\s?(?:-)?innen([\\p{Ll}][\\p{L}]*)", "giu");
   const reStandaloneInMarker    = new RegExp("^\\s*(?:\\(|\\[)?" + MARKER + "\\s*(?:-)?\\s*in(?:\\)|\\])?\\s*$",    "iu");
@@ -404,6 +405,7 @@
     [
       reGenderInfo.source,
       reAdjNWithMarker.source,
+      reAdjEWithMarker.source,
       reAdjRWithMarker.source,
       reInSlashInnen.source,
       reBinnenIPlural.source,
@@ -446,6 +448,7 @@
 
     R(reGenderInfo,      ()            => "");
     R(reAdjNWithMarker,  (_, stem)     => stem + "n");
+    R(reAdjEWithMarker,  (_, stem)     => stem);
     R(reAdjRWithMarker,  (_, stem)     => stem + "r");
     R(reInSlashInnen,    (_, stem)     => replaceStem(stem, true));
     R(reBinnenIPlural,   (_, stem)     => replaceStem(stem, true));
