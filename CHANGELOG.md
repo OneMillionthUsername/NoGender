@@ -1,4 +1,11 @@
 # Changelog
+## 1.8.1 (2026-04-18)
+
+### Neue Funktionen
+- **`:r`-Adjektivformen**: Gegenderte Pronomen- und Adjektivformen mit `-:r`-Suffix werden jetzt erkannt und aufgelöst – z. B. „jede:r" → „jeder", „welche:r" → „welcher", „eine:r" → „einer". Betrifft alle Marker (`:`, `*`, `·` usw.).
+
+---
+
 ## 1.8 (2026-04-16)
 
 ### Fehlerbehebungen
