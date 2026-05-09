@@ -1,4 +1,11 @@
 # Changelog
+## 1.8.3 (2026-05-09)
+
+### Neue Funktionen
+- **`:m`-Dativ-Formen**: Gegenderte Dativ-Pronomen mit `-er:m`-Suffix werden jetzt erkannt und zum maskulinen Dativ aufgelöst – z. B. „jeder:m" → „jedem", „dieser:m" → „diesem", „welcher:m" → „welchem", „einer:m" → „einem", „der:m" → „dem". Anders als die `:r`/`:n`/`:e`-Muster wird hier die Endung `-er` durch `-em` ersetzt (statt nur angehängt), da das Anhängen ein Nicht-Wort ergäbe. Betrifft alle Marker (`:`, `*`, `·` usw.).
+
+---
+
 ## 1.8.2 (2026-04-18)
 
 ### Neue Funktionen

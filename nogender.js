@@ -8,7 +8,7 @@
   // 0. KONFIGURATION – aus browser.storage.local laden
   // ─────────────────────────────────────────────────────────────
 
-  const VERSION    = "1.8.2";
+  const VERSION    = "1.8.3";
   const CACHE_KEY  = "nogender_wikt_cache";
 
   const DEFAULT_CONFIG = {
@@ -385,6 +385,11 @@
   const reAdjNWithMarker        = new RegExp("(\\b[\\p{L}]{2,})\\s*" + MARKER + "\\s*n\\b(?!\\/)", "gu");
   const reAdjEWithMarker        = new RegExp("(\\b[\\p{L}]{2,})\\s*" + MARKER + "\\s*e\\b(?!\\/)", "gu");
   const reAdjRWithMarker        = new RegExp("(\\b[\\p{L}]{2,})\\s*" + MARKER + "\\s*r\\b(?!\\/)", "gu");
+  // Dativ-Maskulinum: "jeder:m" → "jedem", "dieser:m" → "diesem", "der:m" → "dem".
+  // Anders als die :r/:n/:e-Muster wird hier nicht angehängt, sondern die
+  // Endung -er durch -em ersetzt (sonst käme "jederm" raus). Stamm-Minimum
+  // ist bewusst 1 Buchstabe, damit auch "der:m" greift.
+  const reAdjErMWithMarker      = new RegExp("(\\b[\\p{L}]+)er\\s*" + MARKER + "\\s*m\\b(?!\\/)", "gu");
   const reInnenCompound         = new RegExp(STEM + "\\s*(?:\\(|\\[)?" + MARKER + "\\s?(?:-)?innen([\\p{Ll}][\\p{L}]*)", "giu");
   const reStandaloneInMarker    = new RegExp("^\\s*(?:\\(|\\[)?" + MARKER + "\\s*(?:-)?\\s*in(?:\\)|\\])?\\s*$",    "iu");
   const reStandaloneInnenMarker = new RegExp("^\\s*(?:\\(|\\[)?" + MARKER + "\\s*(?:-)?\\s*innen(?:\\)|\\])?\\s*$", "iu");
@@ -407,6 +412,7 @@
       reAdjNWithMarker.source,
       reAdjEWithMarker.source,
       reAdjRWithMarker.source,
+      reAdjErMWithMarker.source,
       reInSlashInnen.source,
       reBinnenIPlural.source,
       reBinnenISingular.source,
@@ -450,6 +456,7 @@
     R(reAdjNWithMarker,  (_, stem)     => stem + "n");
     R(reAdjEWithMarker,  (_, stem)     => stem);
     R(reAdjRWithMarker,  (_, stem)     => stem + "r");
+    R(reAdjErMWithMarker,(_, stem)     => stem + "em");
     R(reInSlashInnen,    (_, stem)     => replaceStem(stem, true));
     R(reBinnenIPlural,   (_, stem)     => replaceStem(stem, true));
     R(reBinnenISingular, (_, stem)     => replaceStem(stem, false));
