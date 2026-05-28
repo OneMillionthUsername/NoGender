@@ -8,7 +8,7 @@
   // 0. KONFIGURATION – aus browser.storage.local laden
   // ─────────────────────────────────────────────────────────────
 
-  const VERSION    = "1.8.3";
+  const VERSION    = "1.8.4";
   const CACHE_KEY  = "nogender_wikt_cache";
 
   const DEFAULT_CONFIG = {
@@ -185,6 +185,7 @@
     ["köch",            { sg:"Köchin",             pl:"Köche"              }],
     ["nachbar",         { sg:"Nachbar",            pl:"Nachbarn"           }],
     ["kollege",         { sg:"Kollege",            pl:"Kollegen"           }],
+    ["sklav",           { sg:"Sklave",             pl:"Sklaven"            }],
     ["freund",          { sg:"Freund",             pl:"Freunde"            }],
     ["wirt",            { sg:"Wirt",               pl:"Wirte"              }],
     // -oge/-ogen
@@ -263,6 +264,8 @@
     ["eigentümer",      { sg:"Eigentümer",         pl:"Eigentümer"         }],
     ["verbraucher",     { sg:"Verbraucher",        pl:"Verbraucher"        }],
     ["gründer",         { sg:"Gründer",            pl:"Gründer"            }],
+    // "Förder:innen" → Stamm "Förder"; das Maskulinum ist "Förderer" (Fem. "Förderin").
+    ["förder",          { sg:"Förderer",           pl:"Förderer"           }],
     ["helfer",          { sg:"Helfer",             pl:"Helfer"             }],
     ["spieler",         { sg:"Spieler",            pl:"Spieler"            }],
     ["wähler",          { sg:"Wähler",             pl:"Wähler"             }],
@@ -393,6 +396,13 @@
   const reInnenCompound         = new RegExp(STEM + "\\s*(?:\\(|\\[)?" + MARKER + "\\s?(?:-)?innen([\\p{Ll}][\\p{L}]*)", "giu");
   const reStandaloneInMarker    = new RegExp("^\\s*(?:\\(|\\[)?" + MARKER + "\\s*(?:-)?\\s*in(?:\\)|\\])?\\s*$",    "iu");
   const reStandaloneInnenMarker = new RegExp("^\\s*(?:\\(|\\[)?" + MARKER + "\\s*(?:-)?\\s*innen(?:\\)|\\])?\\s*$", "iu");
+  // Indefinitpronomen-Reversion: "mensch"/"frau" als entgendertes Ersatzwort
+  // für "man" (z. B. "könnte mensch sagen") werden zu "man" zurückgeführt.
+  // BEWUSST case-sensitiv und nur kleingeschrieben: Das großgeschriebene
+  // Substantiv "Mensch"/"Frau" sowie "Menschen"/"Frauen" bleiben unangetastet.
+  // Satzanfänge (großgeschrieben) werden nicht erfasst, um den Substantiv-
+  // Sinn nicht zu zerstören.
+  const reIndefinitePronoun     = /\b(?:mensch|frau)\b/g;
 
   const FALSE_POSITIVES = new Set([
     "heroin","heroine","protein","platine","marine","maschine","routine",
@@ -413,6 +423,7 @@
       reAdjEWithMarker.source,
       reAdjRWithMarker.source,
       reAdjErMWithMarker.source,
+      reIndefinitePronoun.source,
       reInSlashInnen.source,
       reBinnenIPlural.source,
       reBinnenISingular.source,
@@ -439,7 +450,13 @@
     if (FALSE_POSITIVES.has(stem.toLowerCase())) return stem;
     const compound = splitCompound(stem);
     if (compound) {
-      return compound.prefix + resolveForm(compound.stem, isPlural, getWikt(compound.stem));
+      const resolved = resolveForm(compound.stem, isPlural, getWikt(compound.stem));
+      // Der Stamm steht als zweiter Kompositateil mitten im Wort und muss
+      // kleingeschrieben werden – sonst entstünde "BeNutzer", "SozialArbeiter".
+      const joined = resolved
+        ? resolved[0].toLowerCase() + resolved.slice(1)
+        : resolved;
+      return compound.prefix + joined;
     }
     return resolveForm(stem, isPlural, getWikt(stem));
   }
@@ -453,6 +470,7 @@
     const R = (re, fn) => { re.lastIndex = 0; out = out.replace(re, fn); };
 
     R(reGenderInfo,      ()            => "");
+    R(reIndefinitePronoun, ()          => "man");
     R(reAdjNWithMarker,  (_, stem)     => stem + "n");
     R(reAdjEWithMarker,  (_, stem)     => stem);
     R(reAdjRWithMarker,  (_, stem)     => stem + "r");

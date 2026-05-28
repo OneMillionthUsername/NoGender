@@ -1,4 +1,16 @@
 # Changelog
+## 1.8.4 (2026-05-28)
+
+### Fehlerbehebungen
+- **Kompositum-Großschreibung**: Bei zusammengesetzten Wörtern wurde der erkannte Personenstamm aus dem LEXICON großgeschrieben mitten ins Wort eingesetzt – „Benutzer:innen" → „BeNutzer", „Bewegungsaktivist*innen" → „BewegungsAktivisten", „Sozialarbeiter:innen" → „SozialArbeiter". `replaceStem` schreibt den aufgelösten Stamm jetzt klein, da er als zweiter Kompositateil mitten im Wort steht. Ergebnis: „Benutzer", „Bewegungsaktivisten", „Sozialarbeiter".
+- **„Sklav:in/-innen"**: Der Stamm „Sklav" war weder im LEXICON noch (unter dem Lemma „Sklave") über Wiktionary auffindbar; `toPlural` ließ die `v`-Endung unverändert, sodass „Sklav*innen" → „Sklav" und „Sklav*innenstatus" gänzlich unverändert blieb. Neuer LEXICON-Eintrag (n-Deklination): „Sklave"/„Sklaven". Ergebnis: „Sklaven", „Sklavenstatus".
+- **„Förder:in/-innen"**: Der unbekannte Stamm „Förder" blieb wegen `toPlural` unverändert. Neuer LEXICON-Eintrag „Förderer" (Fem. „Förderin"). Ergebnis: „Förderer". Hinweis: Die Extension löst nur den Nominativ auf; kasusabhängige Formen wie der Dativ Plural „Förderern" (nach „nach") werden bewusst nicht erzeugt.
+
+### Neue Funktionen
+- **Indefinitpronomen-Reversion (`mensch`/`frau` → `man`)**: Das in entgenderter Sprache als Ersatz für „man" genutzte „mensch" bzw. „frau" (z. B. „könnte mensch sagen", „wie frau weiß") wird zu „man" zurückgeführt. Bewusst case-sensitiv und nur kleingeschrieben: Die großgeschriebenen Substantive „Mensch"/„Frau", deren Plurale „Menschen"/„Frauen" sowie Wortbestandteile (z. B. „Übermensch") bleiben unangetastet. Satzanfänge (großgeschrieben) werden nicht erfasst, um den Substantiv-Sinn nicht zu zerstören. Resteinschränkung: durchgängig kleingeschriebenes „frau" im Substantiv-Sinn (informelle Texte) wird ggf. mit-ersetzt.
+
+---
+
 ## 1.8.3 (2026-05-09)
 
 ### Neue Funktionen
