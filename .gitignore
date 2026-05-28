@@ -1,2 +1,5 @@
 nogender.zip
 nogender.js.bak
+node_modules/
+web-ext-artifacts/
+*.log

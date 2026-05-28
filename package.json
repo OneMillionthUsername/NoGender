@@ -1,0 +1,28 @@
+{
+  "name": "nogender",
+  "version": "2.0.0",
+  "description": "Firefox-Erweiterung, die künstlich gegenderte Formen auf Webseiten durch natürliches Deutsch ersetzt. Läuft lokal, mit optionalem Wiktionary-Lookup.",
+  "private": true,
+  "license": "GPL-3.0-or-later",
+  "homepage": "https://github.com/OneMillionthUsername/NoGender",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/OneMillionthUsername/NoGender.git"
+  },
+  "scripts": {
+    "test": "node --test",
+    "lint": "eslint .",
+    "lint:ext": "web-ext lint --source-dir=.",
+    "start": "web-ext run --source-dir=.",
+    "build": "web-ext build --source-dir=. --overwrite-dest"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "eslint": "^9.0.0",
+    "globals": "^15.0.0",
+    "web-ext": "^8.0.0"
+  }
+}

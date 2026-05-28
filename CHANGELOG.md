@@ -1,10 +1,25 @@
 # Changelog
-## 1.8.4 (2026-05-28)
+## 2.0.0 (2026-05-28)
+
+Erster **Open-Source-Release** unter der GNU GPL v3, zusammen mit mehreren
+Fehlerbehebungen und einer neuen Funktion. Wegen des Umfangs (Projekt-Infrastruktur +
+neue Funktion) ein Major-Sprung.
+
+### Projekt / Infrastruktur
+- **Open Source (GPL-3.0-or-later)**: Vollständige `LICENSE`, SPDX-Header in den Quelldateien.
+- **README.md**: Funktionsumfang, Installation, Bedienung, Funktionsweise, Datenschutz, Mitwirken.
+- **Testsuite**: Node-Test-Runner (`npm test`), lädt `nogender.js` direkt – die Datei
+  exportiert ihre reinen Funktionen unter Node (`module.exports`) und kapselt den
+  Browser-Bootstrap hinter `typeof`-Guards, ohne Verhalten im Browser zu ändern.
+- **Tooling**: `package.json` mit Scripts (`test`, `lint`, `start`, `build`),
+  ESLint-Flat-Config, `web-ext`-Integration. `.gitignore` um Node-Artefakte ergänzt.
+- **Aufräumen**: leere `todo.txt` entfernt.
 
 ### Fehlerbehebungen
 - **Kompositum-Großschreibung**: Bei zusammengesetzten Wörtern wurde der erkannte Personenstamm aus dem LEXICON großgeschrieben mitten ins Wort eingesetzt – „Benutzer:innen" → „BeNutzer", „Bewegungsaktivist*innen" → „BewegungsAktivisten", „Sozialarbeiter:innen" → „SozialArbeiter". `replaceStem` schreibt den aufgelösten Stamm jetzt klein, da er als zweiter Kompositateil mitten im Wort steht. Ergebnis: „Benutzer", „Bewegungsaktivisten", „Sozialarbeiter".
 - **„Sklav:in/-innen"**: Der Stamm „Sklav" war weder im LEXICON noch (unter dem Lemma „Sklave") über Wiktionary auffindbar; `toPlural` ließ die `v`-Endung unverändert, sodass „Sklav*innen" → „Sklav" und „Sklav*innenstatus" gänzlich unverändert blieb. Neuer LEXICON-Eintrag (n-Deklination): „Sklave"/„Sklaven". Ergebnis: „Sklaven", „Sklavenstatus".
 - **„Förder:in/-innen"**: Der unbekannte Stamm „Förder" blieb wegen `toPlural` unverändert. Neuer LEXICON-Eintrag „Förderer" (Fem. „Förderin"). Ergebnis: „Förderer". Hinweis: Die Extension löst nur den Nominativ auf; kasusabhängige Formen wie der Dativ Plural „Förderern" (nach „nach") werden bewusst nicht erzeugt.
+- **Binnen-I bei großgeschriebenen Wörtern**: `LehrerInnen`, `StudentInnen` u. ä. wurden nicht erkannt, weil die Muster einen kleingeschriebenen Wortanfang (`\b[\p{Ll}]`) verlangten und das ASCII-basierte `\b` an Umlauten am Wortrand scheiterte. Die Muster nutzen jetzt Unicode-Lookbehind/-Lookahead und erlauben beliebigen Wortanfang; das große „I" in „Innen"/„In" bleibt das case-sensitive Erkennungssignal. Zur Absicherung wird – wie bei den Kompositum-Mustern – `isLikelyPersonStem` geprüft, sodass Nicht-Personen-Wörter (z. B. „Innenstadt", „LinkedInnen") unangetastet bleiben. Ergebnis: „LehrerInnen" → „Lehrer", „StudentInnen" → „Studenten".
 
 ### Neue Funktionen
 - **Indefinitpronomen-Reversion (`mensch`/`frau` → `man`)**: Das in entgenderter Sprache als Ersatz für „man" genutzte „mensch" bzw. „frau" (z. B. „könnte mensch sagen", „wie frau weiß") wird zu „man" zurückgeführt. Bewusst case-sensitiv und nur kleingeschrieben: Die großgeschriebenen Substantive „Mensch"/„Frau", deren Plurale „Menschen"/„Frauen" sowie Wortbestandteile (z. B. „Übermensch") bleiben unangetastet. Satzanfänge (großgeschrieben) werden nicht erfasst, um den Substantiv-Sinn nicht zu zerstören. Resteinschränkung: durchgängig kleingeschriebenes „frau" im Substantiv-Sinn (informelle Texte) wird ggf. mit-ersetzt.

@@ -1,6 +1,7 @@
-// NoGender v1.8
-// Ersetzt künstlich gegenderte Formen (Ärzt:in, Lehrer*innen, …) durch natürliches Deutsch.
+// SPDX-License-Identifier: GPL-3.0-or-later
+// NoGender – ersetzt künstlich gegenderte Formen (Ärzt:in, Lehrer*innen, …) durch natürliches Deutsch.
 // Natürliche Formen (Ärztin, Lehrerinnen, meine Freundinnen, …) werden NIE angetastet.
+// Copyright (C) 2026 Dean Marinov. Lizenz: GNU GPL v3 oder später (siehe LICENSE).
 (() => {
   "use strict";
 
@@ -8,7 +9,7 @@
   // 0. KONFIGURATION – aus browser.storage.local laden
   // ─────────────────────────────────────────────────────────────
 
-  const VERSION    = "1.8.4";
+  const VERSION    = "2.0.0";
   const CACHE_KEY  = "nogender_wikt_cache";
 
   const DEFAULT_CONFIG = {
@@ -32,46 +33,52 @@
     } catch {}
   };
 
-  browser.storage.local.get("nogender_debug").then(r => {
-    debugEnabled = !!r.nogender_debug;
-  }).catch(() => {});
+  // Browser-APIs nur im Extension-Kontext ansprechen. Unter Node (Tests) fehlt
+  // `browser`; die reinen Funktionen werden dann am Dateiende exportiert.
+  const HAS_BROWSER = typeof browser !== "undefined" && !!browser.storage;
 
-  // Auf Konfigurationsänderungen reagieren (z.B. Domain im Popup hinzugefügt)
-  browser.storage.onChanged.addListener((changes, area) => {
-    if (area !== "local") return;
+  if (HAS_BROWSER) {
+    browser.storage.local.get("nogender_debug").then(r => {
+      debugEnabled = !!r.nogender_debug;
+    }).catch(() => {});
 
-    if (changes.nogender_debug) {
-      debugEnabled = !!changes.nogender_debug.newValue;
-    }
+    // Auf Konfigurationsänderungen reagieren (z.B. Domain im Popup hinzugefügt)
+    browser.storage.onChanged.addListener((changes, area) => {
+      if (area !== "local") return;
 
-    if (!changes.nogender_config) return;
-    const newCfg = { ...DEFAULT_CONFIG, ...(changes.nogender_config.newValue ?? {}) };
-    const willBeActive = newCfg.enabled && !isBlockedDomain(newCfg);
-    // Reload bei Toggle in beide Richtungen (aktiv↔inaktiv), damit die Seite
-    // beim Deaktivieren in den Original-Zustand zurückkehrt und beim
-    // Aktivieren die Erweiterung überhaupt greift. Änderungen an anderen
-    // Domains der Blockliste lösen keinen Reload aus.
-    if (willBeActive !== wasActive) {
-      location.reload();
-    }
-  });
+      if (changes.nogender_debug) {
+        debugEnabled = !!changes.nogender_debug.newValue;
+      }
 
-  // Konfiguration laden, dann starten
-  browser.storage.local.get("nogender_config").then(result => {
-    const cfg = { ...DEFAULT_CONFIG, ...(result.nogender_config ?? {}) };
+      if (!changes.nogender_config) return;
+      const newCfg = { ...DEFAULT_CONFIG, ...(changes.nogender_config.newValue ?? {}) };
+      const willBeActive = newCfg.enabled && !isBlockedDomain(newCfg);
+      // Reload bei Toggle in beide Richtungen (aktiv↔inaktiv), damit die Seite
+      // beim Deaktivieren in den Original-Zustand zurückkehrt und beim
+      // Aktivieren die Erweiterung überhaupt greift. Änderungen an anderen
+      // Domains der Blockliste lösen keinen Reload aus.
+      if (willBeActive !== wasActive) {
+        location.reload();
+      }
+    });
 
-    if (!cfg.enabled || isBlockedDomain(cfg)) {
-      debug("Deaktiviert oder geblockt:", location.hostname);
-      return;
-    }
+    // Konfiguration laden, dann starten
+    browser.storage.local.get("nogender_config").then(result => {
+      const cfg = { ...DEFAULT_CONFIG, ...(result.nogender_config ?? {}) };
 
-    wasActive = true;
-    init();
-  }).catch(() => {
-    // Fallback: starten ohne Config
-    wasActive = true;
-    init();
-  });
+      if (!cfg.enabled || isBlockedDomain(cfg)) {
+        debug("Deaktiviert oder geblockt:", location.hostname);
+        return;
+      }
+
+      wasActive = true;
+      init();
+    }).catch(() => {
+      // Fallback: starten ohne Config
+      wasActive = true;
+      init();
+    });
+  }
 
   // ─────────────────────────────────────────────────────────────
   // 1. WIKTIONARY-LOOKUP & CACHE
@@ -102,10 +109,12 @@
     }, 2000);
   }
   // Vor BFCache/Unload ausstehenden Persist flushen, damit nichts verloren geht.
-  window.addEventListener("pagehide", () => {
-    if (persistTimer) { clearTimeout(persistTimer); persistTimer = null; }
-    persistWiktCache();
-  }, { capture: true });
+  if (typeof window !== "undefined" && window.addEventListener) {
+    window.addEventListener("pagehide", () => {
+      if (persistTimer) { clearTimeout(persistTimer); persistTimer = null; }
+      persistWiktCache();
+    }, { capture: true });
+  }
 
   // Dedupliziert parallele Fetches für dasselbe Lemma. Ohne das würden
   // zweitrangige Aufrufer den `null`-Sentinel des ersten Calls lesen und
@@ -380,8 +389,14 @@
   const reInWithMarker          = new RegExp(STEM + "\\s*(?:\\(|\\[)?" + MARKER + "\\s?(?:-)?in(?:\\)|\\])?(?![\\p{L}\\/_])",    "giu");
   const reInnenParen            = new RegExp(STEM + "\\s*\\(innen\\)", "giu");
   const reInParen               = new RegExp(STEM + "\\s*\\(in\\)",    "giu");
-  const reBinnenIPlural         = new RegExp("(\\b[\\p{Ll}][\\p{L}]*)Innen\\b", "gu");
-  const reBinnenISingular       = new RegExp("(\\b[\\p{Ll}][\\p{L}]*)In\\b",    "gu");
+  // Binnen-I ("LehrerInnen" → "Lehrer", "BürgerIn" → "Bürger"). Der Stamm darf
+  // beliebig anfangen (auch großgeschrieben – das ist der Normalfall bei deutschen
+  // Substantiven). Statt `\b` (ASCII-basiert, scheitert an Umlauten am Wortrand)
+  // begrenzen Unicode-Lookbehind/Lookahead auf echte Wortgrenzen. Das große "I"
+  // in "Innen"/"In" bleibt das case-sensitive Erkennungssignal; deshalb KEIN
+  // `i`-Flag. Die Auflösung ist zusätzlich durch isLikelyPersonStem abgesichert.
+  const reBinnenIPlural         = new RegExp("(?<![\\p{L}])(\\p{L}[\\p{L}]*)Innen(?![\\p{L}\\/_])", "gu");
+  const reBinnenISingular       = new RegExp("(?<![\\p{L}])(\\p{L}[\\p{L}]*)In(?![\\p{L}\\/_])",    "gu");
   const reInSlashInnen          = new RegExp(STEM + "In/Innen\\b", "gi");
   // `(?!\/)` verhindert False-Positives in URLs/Pfaden wie "path/n/foo".
   // Bei `_` greift bereits die Wortgrenze `\b` (weil `_` in `\w` enthalten ist).
@@ -412,10 +427,10 @@
 
   // Vorfilter für normalizeGenderedText. Wird NUR für test() genutzt –
   // eventuelle False-Positives hier sind harmlos, weil die echten Patterns
-  // danach laufen und nichts finden. Das `i`-Flag unterwandert bewusst die
-  // Case-Sensitivität von \p{Ll} in den reBinnenI*-Subpatterns; es darf
-  // hier NICHT entfernt werden, sonst brechen die markerbehafteten
-  // Patterns die ursprünglich mit `giu` definiert waren.
+  // danach laufen und nichts finden. Das `i`-Flag liefert die Case-Insensitivität,
+  // die die markerbehafteten Patterns (ursprünglich `giu`) erwarten; es darf hier
+  // NICHT entfernt werden. Auf die case-sensitiven reBinnenI*-Muster wirkt das
+  // `i` im Vorfilter zwar lockernd, das ist aber unschädlich (s. o.).
   const reAnyGenderPattern = new RegExp(
     [
       reGenderInfo.source,
@@ -476,8 +491,8 @@
     R(reAdjRWithMarker,  (_, stem)     => stem + "r");
     R(reAdjErMWithMarker,(_, stem)     => stem + "em");
     R(reInSlashInnen,    (_, stem)     => replaceStem(stem, true));
-    R(reBinnenIPlural,   (_, stem)     => replaceStem(stem, true));
-    R(reBinnenISingular, (_, stem)     => replaceStem(stem, false));
+    R(reBinnenIPlural,   (m, stem)     => isLikelyPersonStem(stem) ? replaceStem(stem, true)  : m);
+    R(reBinnenISingular, (m, stem)     => isLikelyPersonStem(stem) ? replaceStem(stem, false) : m);
     R(reInnenCompound,   (m, stem, suffix) => {
       if (!isLikelyPersonStem(stem)) return m;
       return replaceStem(stem, true) + suffix;
@@ -843,6 +858,23 @@
     observeGenderedLanguage(root);
     observeHeadChanges();
     debug("NoGender v" + VERSION + " aktiv auf:", location.hostname);
+  }
+
+  // Reine Funktionen für die Testsuite exportieren (nur unter Node/CommonJS;
+  // im Browser-Content-Script ist `module` undefiniert und dieser Block inaktiv).
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = {
+      VERSION,
+      LEXICON,
+      FALSE_POSITIVES,
+      reAnyGenderPattern,
+      preserveCase,
+      toPlural,
+      splitCompound,
+      resolveForm,
+      replaceStem,
+      normalizeGenderedText,
+    };
   }
 
 })();
