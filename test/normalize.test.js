@@ -30,8 +30,8 @@ test("v2.0.0 – Sklav (n-Deklination)", () => {
   expect("Sklav:in", "Sklave");
 });
 
-test("v2.0.0 – Förder → Förderer (nur Nominativ)", () => {
-  expect("aber auch nach Förder:innen", "aber auch nach Förderer");
+test("v2.0.0 – Förder → Förderer", () => {
+  expect("Die Förder:innen", "Die Förderer");  // Nominativ-Kontext
   expect("Förder:in", "Förderer");
 });
 
@@ -68,6 +68,17 @@ test("Umlaut- und unregelmäßige Plurale aus LEXICON", () => {
   expect("Ärzt:innen", "Ärzte");
   expect("Student*innen", "Studenten");
   expect("Architekt:innen", "Architekten");
+});
+
+// -e-Nomen: Stamm ohne End-e ("Kollege" → "Kolleg:innen"). Schlüssel müssen
+// ohne das -e hinterlegt sein, sonst greift der LEXICON-Eintrag nicht.
+test("-e-Nomen (kolleg/biolog)", () => {
+  expect("Kolleg:innen", "Kollegen");
+  expect("Kolleg:in", "Kollege");
+  expect("Biolog*innen", "Biologen");
+  expect("Biolog:in", "Biologe");
+  expect("mit Kolleg:innen", "mit Kollegen");          // + Dativ
+  expect("Arbeitskolleg:innen", "Arbeitskollegen");    // + Kompositum
 });
 
 test("Kompositum nach Marker (1.7.1)", () => {
@@ -111,6 +122,59 @@ test("Klammerformen (Auflösung zum generischen Maskulinum)", () => {
   expect("Lehrer(innen)", "Lehrer");
   expect("Bürger(in)", "Bürger");     // Singular → Maskulinum, nicht "Bürgerin"
   expect("Bürger(innen)", "Bürger");
+});
+
+// ─────────────────────────────────────────────────────────────
+// Dativ-Plural (konservativ, präzisionsorientiert)
+// ─────────────────────────────────────────────────────────────
+test("Dativ-Plural bei eindeutigem Auslöser", () => {
+  expect("nach Förder:innen", "nach Förderern");
+  expect("mit Lehrer:innen", "mit Lehrern");
+  expect("von den Bürger:innen", "von den Bürgern");
+  expect("bei Ärzt:innen", "bei Ärzten");
+  expect("aus Aktivist:innen", "aus Aktivisten");
+  expect("nach den vielen Förder:innen", "nach den vielen Förderern"); // Artikel/Adjektiv dazwischen
+  expect("Mit Lehrer:innen sprechen", "Mit Lehrern sprechen");         // Trigger am Satzanfang
+  expect("den Lehrer:innen", "den Lehrern");                           // "den" + Plural = Dativ
+});
+
+test("Dativ-Regel: -n nur wenn nicht schon -n/-s", () => {
+  expect("mit Student:innen", "mit Studenten");   // endet auf n → unverändert
+  expect("mit Lehrer:innen", "mit Lehrern");      // -er → -ern
+  expect("von Ärzt:innen", "von Ärzten");         // -e → -en
+});
+
+test("kein Dativ ohne eindeutigen Auslöser", () => {
+  expect("Die Lehrer:innen streiken", "Die Lehrer streiken");        // Nominativ-Subjekt
+  expect("für Lehrer:innen", "für Lehrer");                          // Akkusativ-Präposition
+  expect("Wir denken an Lehrer:innen", "Wir denken an Lehrer");      // Wechselpräp. + Verb
+  expect("in Lehrer:innen", "in Lehrer");                            // Wechselpräp. → nicht raten
+  expect("der Dank an die Lehrer:innen", "der Dank an die Lehrer");  // Nomen-Grenze stoppt
+});
+
+test("Dativ nur im Plural, nicht im Singular", () => {
+  expect("mit einer Lehrer:in", "mit einer Lehrer"); // Singular bleibt Nominativ
+});
+
+// ─────────────────────────────────────────────────────────────
+// Artikel-Kongruenz im Singular (nur eindeutiger Nominativ-Satzanfang)
+// ─────────────────────────────────────────────────────────────
+test("Artikel-Kongruenz bei großgeschriebenem Determinativ", () => {
+  expect("Die Kolleg:in sagte das", "Der Kollege sagte das");
+  expect("Eine Mitarbeiter:in fehlt", "Ein Mitarbeiter fehlt");
+  expect("Jede Lehrer:in weiß das", "Jeder Lehrer weiß das");
+  expect("Meine Kolleg:in kommt", "Mein Kollege kommt");
+  expect("Diese Bürger:in klagt", "Dieser Bürger klagt");
+});
+
+test("Artikel-Kongruenz: feminin auflösende Nomen behalten femininen Artikel", () => {
+  expect("Die Ärzt:in kommt", "Die Ärztin kommt");
+  expect("Eine Köch:in fehlt", "Eine Köchin fehlt");
+});
+
+test("Artikel-Kongruenz: kleingeschrieben (mehrdeutig) bleibt unverändert", () => {
+  expect("Ich kenne die Kolleg:in", "Ich kenne die Kollege");  // Nom./Akk. unklar → Artikel unangetastet
+  expect("mit einer Kolleg:in", "mit einer Kollege");
 });
 
 // ─────────────────────────────────────────────────────────────

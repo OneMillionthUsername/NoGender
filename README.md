@@ -17,6 +17,8 @@ korrekt aufzulösen (siehe [Datenschutz](#datenschutz)).
 - **Binnen-I**: `LehrerInnen` → `Lehrer`, `BürgerIn` → `Bürger`.
 - **Klammerformen**: `Lehrer(innen)` → `Lehrer`, `Bürger(in)` → `Bürger`.
 - **Adjektiv-/Pronomenformen**: `jede:r` → `jeder`, `ein:e` → `ein`, `jeder:m` → `jedem`.
+- **Dativ-Plural** (konservativ): `nach Förder:innen` → `nach Förderern`, `mit Lehrer:innen` → `mit Lehrern` (nur bei eindeutigem Auslöser, siehe [bekannte Einschränkungen](#bekannte-einschränkungen)).
+- **Artikel-Kongruenz im Singular**: `Die Kolleg:in` → `Der Kollege`, `Eine Mitarbeiter:in` → `Ein Mitarbeiter` (nur bei großgeschriebenem Determinativ am Satzanfang).
 - **Genus-Kürzel**: `Mitarbeiter (m/w/d)` → `Mitarbeiter`.
 - **Indefinitpronomen**: `mensch`/`frau` (als Ersatz für „man") → `man`.
 - **Komposita**: `Bewegungsaktivist*innen` → `Bewegungsaktivisten`,
@@ -120,18 +122,26 @@ CHANGELOG.md       Versionshistorie
 
 Beiträge sind willkommen. Für den Einstieg eignen sich besonders:
 
-- **Lexikon erweitern**: weitere Personenbezeichnungen in `LEXICON` ergänzen.
-- **`-e`-Lemma-Schlüssel**: einige Lexikon-Einträge (`kollege`, `biologe`) sind mit dem
-  vollständigen Wort als Schlüssel hinterlegt, während der gegenderte Stamm ohne `-e`
-  ankommt (`Kolleg:innen` → Stamm `Kolleg`); der Eintrag greift dadurch nicht.
+- **Lexikon erweitern**: weitere Personenbezeichnungen in `LEXICON` ergänzen. Wichtig:
+  Schlüssel ist immer der **gegenderte Stamm** (ohne End-`e`), z. B. `kolleg` für
+  „Kollege"/„Kolleg:innen", nicht `kollege`.
 
 Bitte vor einem Pull Request `npm test` und `npm run lint` ausführen und neue Fälle
 mit Tests absichern.
 
 ### Bekannte Einschränkungen
 
-- **Keine Kasus-Erkennung**: Aufgelöst wird stets der Nominativ. Nach „nach Förder:innen"
-  entsteht `Förderer` (Nominativ), nicht der grammatisch erwartete Dativ `Förderern`.
+- **Kasus-Erkennung nur teilweise**: Erkannt wird der **Dativ Plural** bei eindeutigen
+  Auslösern (Dativ-Präpositionen, `den` + Plural). **Nicht** behandelt werden
+  Wechselpräpositionen (`in`/`an`/`auf` …, mehrdeutig Dativ/Akkusativ), verbregierter
+  Dativ (`hilft den …:innen`), Dativ Singular und Genitiv – dort bleibt es beim
+  Nominativ. In Aufzählungen erhält nur das erste Glied direkt nach dem Auslöser den
+  Dativ (`von Lehrern, Schüler und Eltern`).
+- **Artikel-Kongruenz nur am Satzanfang**: Der feminine Artikel wird nur an das
+  Maskulinum angepasst, wenn er **großgeschrieben** direkt vor der Singularform steht
+  (`Die Kolleg:in` → `Der Kollege`). Kleingeschrieben mitten im Satz (`die Kolleg:in`,
+  mehrdeutig Nom./Akk.) bleibt der Artikel unverändert; ein dazwischenstehendes Adjektiv
+  (`Die neue Kolleg:in`) wird nicht mitdekliniert.
 - **`mensch`/`frau` → `man`**: nur kleingeschrieben; durchgängig kleingeschriebenes
   `frau` im Substantiv-Sinn kann fälschlich mit-ersetzt werden.
 

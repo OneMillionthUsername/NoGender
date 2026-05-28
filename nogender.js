@@ -2,6 +2,80 @@
 // NoGender – ersetzt künstlich gegenderte Formen (Ärzt:in, Lehrer*innen, …) durch natürliches Deutsch.
 // Natürliche Formen (Ärztin, Lehrerinnen, meine Freundinnen, …) werden NIE angetastet.
 // Copyright (C) 2026 Dean Marinov. Lizenz: GNU GPL v3 oder später (siehe LICENSE).
+//
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║ ÜBERBLICK FÜR NEULINGE – wer macht was?                                   ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+//
+// Grundidee (die "Pipeline"): Sichtbaren Text einsammeln → grob prüfen, ob über-
+// haupt Gendering drinsteckt → mit spezialisierten Mustern die gegenderten Stellen
+// finden → den Wortstamm in natürliches Deutsch auflösen → Groß-/Kleinschreibung
+// und (Dativ-)Kasus passend setzen → zurückschreiben. Ein Beobachter wiederholt
+// das für später nachgeladene Inhalte (z. B. auf React-/SPA-Seiten).
+//
+// ── KONFIGURATION & START ──────────────────────────────────────────────────
+//   isBlockedDomain    Läuft die Erweiterung auf dieser Seite? (Ausschlussliste)
+//   init               Startschuss: verarbeitet die Seite und startet die Beobachter.
+//
+// ── WIKTIONARY (Online-Nachschlagewerk für seltene Wörter) ─────────────────
+//   fetchWiktionaryForms   Holt Beugungsformen eines Worts von de.wiktionary.org (mit Cache).
+//   parseWiktionaryFlexion Fischt aus dem Wiktionary-Rohtext Singular/Plural heraus.
+//   getWikt                Schneller Blick in den Cache (kein Netz).
+//   persistWiktCache /     Cache gebündelt im sessionStorage sichern.
+//     schedulePersist
+//
+// ── WÖRTERBUCH & FORMEN ("wie heißt das Wort entgendert?") ─────────────────
+//   LEXICON            Eingebaute Liste häufiger/unregelmäßiger Personenwörter (kuratiert, autoritativ).
+//   resolveForm        Wählt die richtige Form: erst LEXICON, dann Wiktionary, dann Faustregel.
+//   toPlural           Faustregel zur Pluralbildung, wenn sonst nichts greift.
+//   toDativPlural      Hängt fürs Dativ ein -n an ("Lehrer" → "Lehrern").
+//   preserveCase       Überträgt Groß-/Kleinschreibung des Originals aufs Ergebnis.
+//   splitCompound      Zerlegt Komposita ("Sozialarbeiter" → "Sozial" + "arbeiter").
+//   isLikelyPersonStem Ist das überhaupt eine Personenbezeichnung? (Schutz vor Fehlgriffen)
+//   replaceStem        Setzt alles zusammen: Stamm → fertige natürliche Form.
+//   isDativContext     Blick nach links: steht da "mit/nach/den …"? Dann ist es Dativ.
+//
+// ── ERKENNUNGS-MUSTER (Regex) – das Herz: "was SIEHT gegendert aus?" ───────
+//   MARKER / STEM      Bausteine: die Trennzeichen ( : * · _ / … ) und "ein Wortstamm".
+//   reInnenWithMarker  Plural mit Marker: "Lehrer:innen", "Lehrer*innen"  → Stamm + Zeichen + "innen".
+//   reInWithMarker     Singular mit Marker: "Ärzt:in"                      → Stamm + Zeichen + "in".
+//   reInnenParen /     Klammerform: "Lehrer(innen)" / "Bürger(in)".
+//     reInParen
+//   reBinnenIPlural /  Binnen-I (großes I mitten im Wort): "LehrerInnen" / "BürgerIn".
+//     reBinnenISingular
+//   reInSlashInnen     Slash-Form: "LehrerIn/Innen".
+//   reInnenCompound    Gegendertes Kompositum: "Lehrer:innenzimmer" → "Lehrerzimmer".
+//   reAdjNWithMarker / Adjektiv-/Pronomenendungen: "eine:n"→"einen", "ein:e"→"ein",
+//     reAdjEWithMarker   "jede:r"→"jeder".
+//     reAdjRWithMarker
+//   reAdjErMWithMarker Dativ-Maskulinum: "jeder:m" → "jedem".
+//   reGenderInfo       Stellenanzeigen-Kürzel "(m/w/d)" → wird entfernt.
+//   reIndefinitePronoun "mensch"/"frau" als Ersatz für "man" → "man".
+//   reArtSingularNom   Artikel-Kongruenz am Satzanfang: "Die Kolleg:in" → "Der Kollege".
+//   reStandalone*Marker Ein Marker, der allein in einem Textknoten steht (für über
+//                      mehrere HTML-Tags verteilte Formen).
+//   reAnyGenderPattern Schnell-Vorfilter: "kommt überhaupt Gendering vor?" – spart Arbeit.
+//
+// ── KERN-UMWANDLUNG ────────────────────────────────────────────────────────
+//   normalizeGenderedText      Wendet alle Muster nacheinander auf einen Text an (synchron, ohne Netz).
+//   normalizeGenderedTextAsync Wie oben, lädt aber vorab fehlende Wörter von Wiktionary nach.
+//
+// ── DOM-VERARBEITUNG (Text aus der Seite holen & zurückschreiben) ──────────
+//   isEditableNode           Finger weg von Eingabefeldern (input/textarea/contenteditable).
+//   processBatch /           Geht die sichtbaren Textknoten häppchenweise durch.
+//     replaceGenderedLanguageInDOM
+//   normalizeSplitMarkers*   Repariert Formen, die HTML über mehrere Tags zerreißt
+//                            (z. B. "Lehrer<span>:innen</span>").
+//   normalizeElementAttributes / normalizeAllAttributes  title, alt, aria-label … mitnehmen.
+//   normalizeDocumentTitle / normalizeMetaTags           Seitentitel & <meta>-Tags.
+//   normalizeJsonLd*         Strukturierte Daten (JSON-LD) im <script>.
+//   normalizeSvgText         Text innerhalb von SVG-Grafiken.
+//   normalizeShadowDom       Versteckte Web-Component-Bereiche (Shadow DOM).
+//
+// ── BEOBACHTER (für dynamische Seiten) ─────────────────────────────────────
+//   observeGenderedLanguage  Reagiert auf nachträglich eingefügten/geänderten Inhalt (SPAs).
+//   observeHeadChanges       Beobachtet Titel/Meta im <head>.
+//
 (() => {
   "use strict";
 
@@ -193,7 +267,7 @@
     ["bäuer",           { sg:"Bäuerin",            pl:"Bauern"             }],
     ["köch",            { sg:"Köchin",             pl:"Köche"              }],
     ["nachbar",         { sg:"Nachbar",            pl:"Nachbarn"           }],
-    ["kollege",         { sg:"Kollege",            pl:"Kollegen"           }],
+    ["kolleg",          { sg:"Kollege",            pl:"Kollegen"           }],
     ["sklav",           { sg:"Sklave",             pl:"Sklaven"            }],
     ["freund",          { sg:"Freund",             pl:"Freunde"            }],
     ["wirt",            { sg:"Wirt",               pl:"Wirte"              }],
@@ -201,7 +275,7 @@
     ["pädagog",         { sg:"Pädagoge",           pl:"Pädagogen"          }],
     ["psycholog",       { sg:"Psychologe",         pl:"Psychologen"        }],
     ["soziolog",        { sg:"Soziologe",          pl:"Soziologen"         }],
-    ["biologe",         { sg:"Biologe",            pl:"Biologen"           }],
+    ["biolog",          { sg:"Biologe",            pl:"Biologen"           }],
     ["philolog",        { sg:"Philologe",          pl:"Philologen"         }],
     ["elementarpädagog",{ sg:"Elementarpädagoge",  pl:"Elementarpädagogen" }],
     // -ekt/-eten/-eut/-ot (schwache Deklination)
@@ -326,15 +400,18 @@
   function resolveForm(stem, isPlural, wiktForms) {
     const lower = stem.toLowerCase();
 
+    // Das kuratierte LEXICON ist autoritativ und hat Vorrang vor Wiktionary:
+    // Manche Gender-Stämme fallen mit einem anderen echten Wort zusammen (z. B.
+    // "Kolleg" = das Kolleg), dessen Wiktionary-Formen sonst fälschlich gewönnen.
+    const entry = LEXICON.get(lower);
+    if (entry) return preserveCase(stem, isPlural ? entry.pl : entry.sg);
+
     if (wiktForms) {
       const form = isPlural
         ? (wiktForms.pl?.nom ?? wiktForms.sg?.nom)
         : wiktForms.sg?.nom;
       if (form) return preserveCase(stem, form);
     }
-
-    const entry = LEXICON.get(lower);
-    if (entry) return preserveCase(stem, isPlural ? entry.pl : entry.sg);
 
     // Regelbasierter Fallback
     return isPlural ? toPlural(stem) : stem;
@@ -345,6 +422,55 @@
     if (/e$/i.test(stem)) return stem + "n";
     if (/[tdnrsl]$/i.test(stem)) return stem + "en";
     return stem;
+  }
+
+  // Dativ Plural: regelhaft ein -n an den Nominativ Plural, außer er endet schon
+  // auf -n oder -s ("Lehrer"→"Lehrern", "Förderer"→"Förderern", "Frauen"→"Frauen",
+  // "Autos"→"Autos"). Kein Wiktionary nötig.
+  function toDativPlural(nominativPlural) {
+    return /[ns]$/i.test(nominativPlural) ? nominativPlural : nominativPlural + "n";
+  }
+
+  // Feminine Nominativ-Determinative → Maskulinum (für die Singular-Artikel-Kongruenz,
+  // z. B. "Die Kolleg:in" → "Der Kollege"). Im Nominativ Singular ändert sich die
+  // Nomen-Endung nicht, daher genügt das Umschreiben des Determinativs.
+  const FEM_TO_MASC_NOM = new Map([
+    ["die","der"],["eine","ein"],["keine","kein"],["irgendeine","irgendein"],
+    ["meine","mein"],["deine","dein"],["seine","sein"],["ihre","ihr"],
+    ["unsere","unser"],["eure","euer"],
+    ["diese","dieser"],["jene","jener"],["jede","jeder"],["welche","welcher"],
+    ["manche","mancher"],["solche","solcher"],["jegliche","jeglicher"],["sämtliche","sämtlicher"],
+  ]);
+
+  // Eindeutig Dativ regierende Auslöser direkt vor einem Plural: unzweideutige
+  // Dativ-Präpositionen sowie Dativ-Plural-Determinative (z. B. "den …:innen" –
+  // der Akkusativ Plural wäre "die", also ist "den" + Plural eindeutig Dativ).
+  // Wechselpräpositionen (in/an/auf …) fehlen bewusst – sie sind mehrdeutig.
+  const DATIV_TRIGGERS = new Set([
+    "nach","mit","bei","von","zu","aus","seit","ab","außer","ausser",
+    "gegenüber","entgegen","gemäß","gemaess","nebst","samt","mitsamt","binnen",
+    "den","denen","allen","vielen","beiden","diesen","jenen","manchen",
+    "sämtlichen","saemtlichen","keinen","meinen","deinen","seinen","ihren",
+    "unseren","euren","solchen","wenigen","mehreren","etlichen","einigen","anderen",
+  ]);
+
+  // Konservative Kasus-Heuristik: Steht direkt vor der gegenderten Plural-Form
+  // (höchstens durch Artikel/Adjektive getrennt) ein eindeutiger Dativ-Auslöser?
+  // Großgeschriebene Wörter (vermutlich Nomen) und nachgestellte Klausel-Satzzeichen
+  // beenden die Suche, damit ein Auslöser vor einem ANDEREN Nomen nicht übergreift.
+  function isDativContext(text, offset) {
+    const words = text.slice(0, offset).split(/\s+/);
+    for (let i = words.length - 1, seen = 0; i >= 0 && seen < 4; i--) {
+      const raw = words[i];
+      if (!raw) continue;
+      const core = raw.toLowerCase().replace(/[^a-zäöüß]/g, "");
+      if (!core) continue;                       // reines Satzzeichen-Token
+      seen++;
+      if (DATIV_TRIGGERS.has(core)) return true; // Auslöser (auch "(mit" → "mit")
+      if (/[.,;:!?…]$/.test(raw)) return false;  // Klausel-Ende davor
+      if (/^\p{Lu}/u.test(raw)) return false;    // Großschreibung → vermutlich Nomen
+    }
+    return false;
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -418,6 +544,15 @@
   // Satzanfänge (großgeschrieben) werden nicht erfasst, um den Substantiv-
   // Sinn nicht zu zerstören.
   const reIndefinitePronoun     = /\b(?:mensch|frau)\b/g;
+  // Singular-Artikel-Kongruenz: großgeschriebenes feminines Determinativ direkt vor
+  // einer gegenderten Singularform ("Die Kolleg:in"). Die Großschreibung dient als
+  // Signal für einen Nominativ-Satzanfang; kleingeschrieben mitten im Satz ist
+  // "die"/"eine" mehrdeutig (Nom./Akk.) und wird NICHT angetastet.
+  const reArtSingularNom = new RegExp(
+    "\\b(" + [...FEM_TO_MASC_NOM.keys()].join("|") + ")(\\s+)([\\p{L}]{2,})\\s*(?:\\(|\\[)?" +
+    MARKER + "\\s?(?:-)?in(?:\\)|\\])?(?![\\p{L}\\/_])",
+    "giu"
+  );
 
   const FALSE_POSITIVES = new Set([
     "heroin","heroine","protein","platine","marine","maschine","routine",
@@ -484,22 +619,36 @@
 
     const R = (re, fn) => { re.lastIndex = 0; out = out.replace(re, fn); };
 
+    // Plural-Form auflösen und – falls der Satzkontext eindeutig Dativ verlangt –
+    // in den Dativ Plural setzen. `str`/`off` kommen aus dem replace-Callback.
+    const plural = (stem, off, str) =>
+      isDativContext(str, off) ? toDativPlural(replaceStem(stem, true)) : replaceStem(stem, true);
+
     R(reGenderInfo,      ()            => "");
     R(reIndefinitePronoun, ()          => "man");
     R(reAdjNWithMarker,  (_, stem)     => stem + "n");
     R(reAdjEWithMarker,  (_, stem)     => stem);
     R(reAdjRWithMarker,  (_, stem)     => stem + "r");
     R(reAdjErMWithMarker,(_, stem)     => stem + "em");
-    R(reInSlashInnen,    (_, stem)     => replaceStem(stem, true));
-    R(reBinnenIPlural,   (m, stem)     => isLikelyPersonStem(stem) ? replaceStem(stem, true)  : m);
+    R(reInSlashInnen,    (_, stem, off, str) => plural(stem, off, str));
+    R(reBinnenIPlural,   (m, stem, off, str) => isLikelyPersonStem(stem) ? plural(stem, off, str) : m);
     R(reBinnenISingular, (m, stem)     => isLikelyPersonStem(stem) ? replaceStem(stem, false) : m);
     R(reInnenCompound,   (m, stem, suffix) => {
       if (!isLikelyPersonStem(stem)) return m;
       return replaceStem(stem, true) + suffix;
     });
-    R(reInnenWithMarker, (_, stem)     => replaceStem(stem, true));
+    R(reInnenWithMarker, (_, stem, off, str) => plural(stem, off, str));
+    // Artikel-Kongruenz VOR reInWithMarker, damit das "…:in" hier noch vorhanden ist.
+    R(reArtSingularNom, (m, det, ws, stem) => {
+      if (det[0] === det[0].toLowerCase()) return m;   // nur großgeschrieben (Satzanfang)
+      if (!isLikelyPersonStem(stem)) return m;
+      const noun = replaceStem(stem, false);
+      if (/in$/i.test(noun)) return m;                 // aufgelöst feminin (Ärztin) → Artikel feminin lassen
+      const masc = FEM_TO_MASC_NOM.get(det.toLowerCase());
+      return masc ? preserveCase(det, masc) + ws + noun : m;
+    });
     R(reInWithMarker,    (_, stem)     => replaceStem(stem, false));
-    R(reInnenParen,      (_, stem)     => replaceStem(stem, true));
+    R(reInnenParen,      (_, stem, off, str) => plural(stem, off, str));
     R(reInParen,         (_, stem)     => replaceStem(stem, false));
 
     return out;
@@ -522,6 +671,9 @@
 
     await Promise.all([...stems].filter(Boolean).map(async s => {
       if (wiktCache.has(s)) return;
+      // Kuratierte LEXICON-Stämme nicht abfragen: spart Requests und verhindert,
+      // dass ein gleichlautendes Fremdwort (z. B. "Kolleg") in den Cache gerät.
+      if (LEXICON.has(s)) return;
       await fetchWiktionaryForms(s[0].toUpperCase() + s.slice(1));
     }));
 
