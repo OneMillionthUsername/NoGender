@@ -6,7 +6,7 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const ng = require("../nogender.js");
 
-const { normalizeGenderedText, LEXICON, PSEUDO_FEM } = ng;
+const { normalizeGenderedText, LEXICON, PSEUDO_FEM, PARTICIPLE } = ng;
 
 // Hilfsfunktion: prüft Eingabe → erwartete Ausgabe.
 function expect(input, output) {
@@ -261,6 +261,99 @@ test("Pseudo-Femininum MITTEN im Wort bleibt unangetastet", () => {
 });
 
 // ─────────────────────────────────────────────────────────────
+// Substantivierte Partizipien ("Studierende", "Lehrende") – Phase 2
+// ─────────────────────────────────────────────────────────────
+test("Partizip Plural → Nomen", () => {
+  expect("Liebe Studierende!", "Liebe Studenten!");
+  expect("Sehr geehrte Studierende,", "Sehr geehrte Studenten,");
+  expect("die Studierenden protestieren", "die Studenten protestieren");
+  expect("für Studierende", "für Studenten");
+  expect("die Mitarbeitenden", "die Mitarbeiter");
+  expect("von Lehrenden und Forschenden", "von Lehrern und Forscher"); // 2. Glied: konservative Dativ-Grenze
+});
+
+test("Partizip – neu aufgenommene Stämme", () => {
+  expect("die Promovierenden", "die Doktoranden");
+  expect("ein Promovierender", "ein Doktorand");
+  expect("die Zuhörenden", "die Zuhörer");
+  expect("für Antragstellende", "für Antragsteller");
+  expect("die Konsumierenden", "die Konsumenten");
+  expect("die Anwohnenden", "die Anwohner");
+  expect("promovierende Wissenschaftler", "promovierende Wissenschaftler"); // klein → Adjektiv bleibt
+});
+
+test("Partizip Dativ Plural", () => {
+  expect("mit den Studierenden", "mit den Studenten");
+  expect("von den Forschenden", "von den Forschern");
+  expect("mit Teilnehmenden", "mit Teilnehmern");
+});
+
+test("Partizip Singular nur mit eindeutigem Artikel (Nominativ)", () => {
+  expect("der Studierende", "der Student");
+  expect("die Studierende", "die Studentin");
+  expect("ein Studierender", "ein Student");
+  expect("eine Studierende", "eine Studentin");
+  expect("der fleißige Studierende", "der fleißige Student"); // Adjektiv dazwischen
+});
+
+test("Partizip – obliquer Singular bleibt konservativ unangetastet", () => {
+  expect("dem Studierenden half niemand", "dem Studierenden half niemand");
+  expect("des Studierenden Buch", "des Studierenden Buch");
+});
+
+test("Partizip – Adjektiv vs. Nomen (Großschreibung entscheidet)", () => {
+  expect("studierende Jugend", "studierende Jugend");           // klein → attributives Adjektiv
+  expect("die erforschende Methode", "die erforschende Methode");
+});
+
+test("Partizip – Kompositum-Kopf", () => {
+  expect("Lehramtsstudierende protestieren", "Lehramtsstudenten protestieren");
+  expect("die Lehramtsstudierenden", "die Lehramtsstudenten");
+});
+
+test("Partizip – Flüchtende (kein sauberes Femininum)", () => {
+  expect("die Flüchtenden", "die Flüchtlinge");
+  expect("Hilfe für Flüchtende", "Hilfe für Flüchtlinge");
+  expect("die Flüchtende", "die Flüchtende");   // fem. Singular: f=null → unangetastet
+});
+
+test("Partizip – Schutzliste (echte Partizip-/Adjektiv-Substantive) bleibt", () => {
+  for (const w of ["die Reisenden", "der Vorsitzende", "die Auszubildenden",
+                   "die Angestellten", "die Abgeordneten", "die Vorgesetzten",
+                   "die Betroffenen", "die Freiwilligen", "die Jugendlichen",
+                   "die Beschäftigten", "die Überlebenden", "die Verwandten",
+                   "die Anwesenden", "die Erwachsenen", "die Bekannten",
+                   "die Gefangenen", "die Angeklagten", "die Verdächtigen",
+                   "die Hinterbliebenen", "die Delegierten", "die Selbstständigen",
+                   "die Sachverständigen", "die Verantwortlichen", "die Alleinerziehenden",
+                   "die Gläubigen", "die Heranwachsenden", "die Geschädigten",
+                   "die Asylsuchenden", "die Verstorbenen", "die Erkrankten"]) {
+    expect(w, w);
+  }
+});
+
+test("Partizip – bewusst NICHT aufgenommene (echte) Partizipien bleiben", () => {
+  // Diese sehen umwandelbar aus, sind aber normales Deutsch (kein Gendering-Ersatz):
+  for (const w of ["die Streikenden", "die Wartenden", "die Umstehenden",
+                   "die Lernenden", "die Sterbenden", "die Mitwirkenden",
+                   "die Vortragenden", "die Schaffenden"]) {
+    expect(w, w);
+  }
+});
+
+test("Partizip – Komposita mit nachfolgendem Wort bleiben unangetastet", () => {
+  expect("Studierendenwerk", "Studierendenwerk");
+  expect("Studierendenausweis", "Studierendenausweis");
+});
+
+test("Partizip – abschaltbar über Flag", () => {
+  assert.equal(normalizeGenderedText("Liebe Studierende!", false), "Liebe Studierende!");
+  // Marker-Entgendern bleibt unabhängig vom Partizip-Flag aktiv:
+  assert.equal(normalizeGenderedText("Lehrer:innen und Studierende", false),
+               "Lehrer und Studierende");
+});
+
+// ─────────────────────────────────────────────────────────────
 // Strukturelle Invarianten
 // ─────────────────────────────────────────────────────────────
 test("LEXICON-Schlüssel sind kleingeschrieben und Werte vollständig", () => {
@@ -275,5 +368,14 @@ test("PSEUDO_FEM-Schlüssel sind kleingeschrieben, enden auf -in und haben sg/pl
     assert.equal(key, key.toLowerCase(), `Schlüssel nicht kleingeschrieben: ${key}`);
     assert.ok(key.endsWith("in"), `Schlüssel endet nicht auf -in: ${key}`);
     assert.ok(val.sg && val.pl, `sg/pl fehlt für: ${key}`);
+  }
+});
+
+test("PARTICIPLE-Schlüssel sind kleingeschrieben, enden auf -nd und haben m/pl", () => {
+  for (const [key, val] of PARTICIPLE) {
+    assert.equal(key, key.toLowerCase(), `Schlüssel nicht kleingeschrieben: ${key}`);
+    assert.ok(key.endsWith("nd"), `Schlüssel endet nicht auf -nd: ${key}`);
+    assert.ok(val.m && val.pl, `m/pl fehlt für: ${key}`);
+    assert.ok("f" in val, `f-Feld fehlt für: ${key}`); // darf null sein, muss aber existieren
   }
 });

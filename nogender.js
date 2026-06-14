@@ -4,40 +4,42 @@
 // Copyright (C) 2026 Dean Marinov. Lizenz: GNU GPL v3 oder später (siehe LICENSE).
 //
 // ╔══════════════════════════════════════════════════════════════════════════╗
-// ║ ÜBERBLICK FÜR NEULINGE – wer macht was?                                   ║
+// ║ MODUL-ÜBERBLICK                                                           ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 //
-// Grundidee (die "Pipeline"): Sichtbaren Text einsammeln → grob prüfen, ob über-
-// haupt Gendering drinsteckt → mit spezialisierten Mustern die gegenderten Stellen
-// finden → den Wortstamm in natürliches Deutsch auflösen → Groß-/Kleinschreibung
-// und (Dativ-)Kasus passend setzen → zurückschreiben. Ein Beobachter wiederholt
-// das für später nachgeladene Inhalte (z. B. auf React-/SPA-Seiten).
+// Verarbeitungs-Pipeline: sichtbaren Text einsammeln → per Vorfilter prüfen, ob
+// Gendering vorkommt → mit spezialisierten Mustern die gegenderten Stellen finden →
+// den Wortstamm in natürliches Deutsch auflösen → Groß-/Kleinschreibung und
+// (Dativ-)Kasus setzen → zurückschreiben. Ein MutationObserver wiederholt die
+// Verarbeitung für nachgeladene Inhalte (z. B. auf React-/SPA-Seiten).
 //
 // ── KONFIGURATION & START ──────────────────────────────────────────────────
-//   isBlockedDomain    Läuft die Erweiterung auf dieser Seite? (Ausschlussliste)
-//   init               Startschuss: verarbeitet die Seite und startet die Beobachter.
+//   isBlockedDomain    Prüft, ob die Domain auf der Ausschlussliste steht.
+//   init               Einstiegspunkt: verarbeitet die Seite und startet die Observer.
 //
-// ── WIKTIONARY (Online-Nachschlagewerk für seltene Wörter) ─────────────────
-//   fetchWiktionaryForms   Holt Beugungsformen eines Worts von de.wiktionary.org (mit Cache).
-//   parseWiktionaryFlexion Fischt aus dem Wiktionary-Rohtext Singular/Plural heraus.
-//   getWikt                Schneller Blick in den Cache (kein Netz).
-//   persistWiktCache /     Cache gebündelt im sessionStorage sichern.
+// ── WIKTIONARY (Nachschlagewerk für seltene Wörter) ────────────────────────
+//   fetchWiktionaryForms   Lädt Beugungsformen eines Worts von de.wiktionary.org (mit Cache).
+//   parseWiktionaryFlexion Extrahiert Singular/Plural aus dem Wiktionary-Rohtext.
+//   getWikt                Liest aus dem Cache (ohne Netzwerkzugriff).
+//   persistWiktCache /     Sichert den Cache gebündelt im sessionStorage.
 //     schedulePersist
 //
-// ── WÖRTERBUCH & FORMEN ("wie heißt das Wort entgendert?") ─────────────────
-//   LEXICON            Eingebaute Liste häufiger/unregelmäßiger Personenwörter (kuratiert, autoritativ).
+// ── WÖRTERBUCH & FORMEN (Auflösung in natürliche Formen) ───────────────────
+//   LEXICON            Kuratierte, autoritative Liste häufiger/unregelmäßiger Personenwörter.
 //   PSEUDO_FEM         Kuratierte Pseudo-Feminina ("Gästin", "Vorständin") → echtes Grundwort.
-//   resolveForm        Wählt die richtige Form: erst LEXICON, dann Wiktionary, dann Faustregel.
-//   toPlural           Faustregel zur Pluralbildung, wenn sonst nichts greift.
-//   toDativPlural      Hängt fürs Dativ ein -n an ("Lehrer" → "Lehrern").
-//   preserveCase       Überträgt Groß-/Kleinschreibung des Originals aufs Ergebnis.
+//   PARTICIPLE         Kuratierte Partizip-Substantive ("Studierende") → echtes Nomen (Allowlist).
+//   resolveParticiple  Bestimmt Numerus/Genus aus Determinativ + Endung (konservativ, nur Nominativ-Sg.).
+//   resolveForm        Wählt die Form: erst LEXICON, dann Wiktionary, dann regelbasiert.
+//   toPlural           Regelbasierte Pluralbildung als Fallback.
+//   toDativPlural      Bildet den Dativ Plural ("Lehrer" → "Lehrern").
+//   preserveCase       Überträgt die Groß-/Kleinschreibung des Originals auf das Ergebnis.
 //   splitCompound      Zerlegt Komposita ("Sozialarbeiter" → "Sozial" + "arbeiter").
-//   isLikelyPersonStem Ist das überhaupt eine Personenbezeichnung? (Schutz vor Fehlgriffen)
-//   replaceStem        Setzt alles zusammen: Stamm → fertige natürliche Form.
-//   isDativContext     Blick nach links: steht da "mit/nach/den …"? Dann ist es Dativ.
+//   isLikelyPersonStem Prüft, ob ein Stamm eine Personenbezeichnung ist (schützt vor Fehlgriffen).
+//   replaceStem        Setzt Stamm und aufgelöste Form zusammen.
+//   isDativContext     Prüft den linken Kontext auf eindeutige Dativ-Auslöser ("mit"/"nach"/"den" …).
 //
-// ── ERKENNUNGS-MUSTER (Regex) – das Herz: "was SIEHT gegendert aus?" ───────
-//   MARKER / STEM      Bausteine: die Trennzeichen ( : * · _ / … ) und "ein Wortstamm".
+// ── ERKENNUNGS-MUSTER (Regex) ──────────────────────────────────────────────
+//   MARKER / STEM      Bausteine: Trennzeichen ( : * · _ / … ) und Wortstamm.
 //   reInnenWithMarker  Plural mit Marker: "Lehrer:innen", "Lehrer*innen"  → Stamm + Zeichen + "innen".
 //   reInWithMarker     Singular mit Marker: "Ärzt:in"                      → Stamm + Zeichen + "in".
 //   reInnenParen /     Klammerform: "Lehrer(innen)" / "Bürger(in)".
@@ -54,28 +56,29 @@
 //   reIndefinitePronoun "mensch"/"frau" als Ersatz für "man" → "man".
 //   rePseudoFem        Pseudo-Feminina ohne Marker: "Gästin(nen)" → "Gast"/"Gäste".
 //   rePseudoFemArt     Artikel-Kongruenz davor: "Die Vorständin" → "Der Vorstand".
+//   reParticiple       Substantivierte Partizipien: "Studierende" → "Studenten" (Allowlist).
 //   reArtSingularNom   Artikel-Kongruenz am Satzanfang: "Die Kolleg:in" → "Der Kollege".
 //   reStandalone*Marker Ein Marker, der allein in einem Textknoten steht (für über
 //                      mehrere HTML-Tags verteilte Formen).
-//   reAnyGenderPattern Schnell-Vorfilter: "kommt überhaupt Gendering vor?" – spart Arbeit.
+//   reAnyGenderPattern Vorfilter: prüft, ob überhaupt Gendering vorkommt (vermeidet unnötige Arbeit).
 //
 // ── KERN-UMWANDLUNG ────────────────────────────────────────────────────────
 //   normalizeGenderedText      Wendet alle Muster nacheinander auf einen Text an (synchron, ohne Netz).
 //   normalizeGenderedTextAsync Wie oben, lädt aber vorab fehlende Wörter von Wiktionary nach.
 //
-// ── DOM-VERARBEITUNG (Text aus der Seite holen & zurückschreiben) ──────────
-//   isEditableNode           Finger weg von Eingabefeldern (input/textarea/contenteditable).
-//   processBatch /           Geht die sichtbaren Textknoten häppchenweise durch.
+// ── DOM-VERARBEITUNG ───────────────────────────────────────────────────────
+//   isEditableNode           Schließt Eingabefelder aus (input/textarea/contenteditable).
+//   processBatch /           Verarbeitet die sichtbaren Textknoten blockweise.
 //     replaceGenderedLanguageInDOM
-//   normalizeSplitMarkers*   Repariert Formen, die HTML über mehrere Tags zerreißt
+//   normalizeSplitMarkers*   Behandelt Formen, die HTML über mehrere Tags verteilt
 //                            (z. B. "Lehrer<span>:innen</span>").
-//   normalizeElementAttributes / normalizeAllAttributes  title, alt, aria-label … mitnehmen.
+//   normalizeElementAttributes / normalizeAllAttributes  Normalisiert title, alt, aria-label …
 //   normalizeDocumentTitle / normalizeMetaTags           Seitentitel & <meta>-Tags.
 //   normalizeJsonLd*         Strukturierte Daten (JSON-LD) im <script>.
 //   normalizeSvgText         Text innerhalb von SVG-Grafiken.
-//   normalizeShadowDom       Versteckte Web-Component-Bereiche (Shadow DOM).
+//   normalizeShadowDom       Web-Component-Bereiche (Shadow DOM).
 //
-// ── BEOBACHTER (für dynamische Seiten) ─────────────────────────────────────
+// ── OBSERVER (für dynamische Seiten) ───────────────────────────────────────
 //   observeGenderedLanguage  Reagiert auf nachträglich eingefügten/geänderten Inhalt (SPAs).
 //   observeHeadChanges       Beobachtet Titel/Meta im <head>.
 //
@@ -86,16 +89,18 @@
   // 0. KONFIGURATION – aus browser.storage.local laden
   // ─────────────────────────────────────────────────────────────
 
-  const VERSION    = "2.0.0";
+  const VERSION    = "2.1.0";
   const CACHE_KEY  = "nogender_wikt_cache";
 
   const DEFAULT_CONFIG = {
     enabled: true,
     blockedDomains: [],
+    participles: true,   // Partizip-Substantive (Studierende → Studenten) zurückbauen
   };
 
-  let debugEnabled = false;
-  let wasActive    = false;
+  let debugEnabled       = false;
+  let wasActive          = false;
+  let participlesEnabled = true;   // aus cfg.participles gesetzt; steuert den Partizip-Pass
 
   function isBlockedDomain(cfg) {
     const host = location.hostname.replace(/^www\./, "");
@@ -129,7 +134,15 @@
 
       if (!changes.nogender_config) return;
       const newCfg = { ...DEFAULT_CONFIG, ...(changes.nogender_config.newValue ?? {}) };
+      // Auch ein Umschalten des Partizip-Features erfordert einen Reload, damit der
+      // Seitentext neu (bzw. im Original) gerendert wird.
+      const participlesChanged = (newCfg.participles !== false) !== participlesEnabled;
+      participlesEnabled = newCfg.participles !== false;
       const willBeActive = newCfg.enabled && !isBlockedDomain(newCfg);
+      if (participlesChanged && willBeActive && wasActive) {
+        location.reload();
+        return;
+      }
       // Reload bei Toggle in beide Richtungen (aktiv↔inaktiv), damit die Seite
       // beim Deaktivieren in den Original-Zustand zurückkehrt und beim
       // Aktivieren die Erweiterung überhaupt greift. Änderungen an anderen
@@ -142,6 +155,7 @@
     // Konfiguration laden, dann starten
     browser.storage.local.get("nogender_config").then(result => {
       const cfg = { ...DEFAULT_CONFIG, ...(result.nogender_config ?? {}) };
+      participlesEnabled = cfg.participles !== false;
 
       if (!cfg.enabled || isBlockedDomain(cfg)) {
         debug("Deaktiviert oder geblockt:", location.hostname);
@@ -471,6 +485,68 @@
     ["fachkräftin",  { sg:"Fachkraft", pl:"Fachkräfte", g:"f" }],
   ]);
 
+  // Substantivierte Partizipien als Gender-Ersatz ("Studierende" statt "Studenten").
+  // ALLOWLIST-ONLY: nur diese kuratierten Stämme werden umgewandelt; jedes andere
+  // -nd-Wort bleibt unangetastet (so sind echte Partizip-Substantive wie "Reisende",
+  // "Vorsitzende", "Auszubildende" automatisch sicher). Schlüssel = Partizip-Stamm OHNE
+  // Adjektivendung ("studierend"); `m`/`f` = maskuline/feminine Nominativ-Singular-Form
+  // (f=null, wenn es kein sauberes Femininum gibt, z. B. Flüchtling), `pl` = Plural.
+  const PARTICIPLE = new Map([
+    ["studierend",     { m:"Student",     f:"Studentin",     pl:"Studenten"     }],
+    ["forschend",      { m:"Forscher",    f:"Forscherin",    pl:"Forscher"      }],
+    ["lehrend",        { m:"Lehrer",      f:"Lehrerin",      pl:"Lehrer"        }],
+    ["mitarbeitend",   { m:"Mitarbeiter", f:"Mitarbeiterin", pl:"Mitarbeiter"   }],
+    ["teilnehmend",    { m:"Teilnehmer",  f:"Teilnehmerin",  pl:"Teilnehmer"    }],
+    ["pflegend",       { m:"Pfleger",     f:"Pflegerin",     pl:"Pfleger"       }],
+    ["lesend",         { m:"Leser",       f:"Leserin",       pl:"Leser"         }],
+    ["nutzend",        { m:"Nutzer",      f:"Nutzerin",      pl:"Nutzer"        }],
+    ["helfend",        { m:"Helfer",      f:"Helferin",      pl:"Helfer"        }],
+    ["wählend",        { m:"Wähler",      f:"Wählerin",      pl:"Wähler"        }],
+    ["zuschauend",     { m:"Zuschauer",     f:"Zuschauerin",     pl:"Zuschauer"     }],
+    ["zuhörend",       { m:"Zuhörer",       f:"Zuhörerin",       pl:"Zuhörer"       }],
+    ["demonstrierend", { m:"Demonstrant",   f:"Demonstrantin",   pl:"Demonstranten" }],
+    ["promovierend",   { m:"Doktorand",     f:"Doktorandin",     pl:"Doktoranden"   }],
+    ["konsumierend",   { m:"Konsument",     f:"Konsumentin",     pl:"Konsumenten"   }],
+    ["antragstellend", { m:"Antragsteller", f:"Antragstellerin", pl:"Antragsteller" }],
+    ["anwohnend",      { m:"Anwohner",      f:"Anwohnerin",      pl:"Anwohner"      }],
+    ["pendelnd",       { m:"Pendler",       f:"Pendlerin",       pl:"Pendler"       }],
+    ["flüchtend",      { m:"Flüchtling",    f:null,              pl:"Flüchtlinge"   }],
+  ]);
+
+  // Determinativ-Klassifikation für die adjektivische Deklination der Partizipien.
+  // Numerus/Genus/Kasus lässt sich nur am vorangehenden Determinativ + der Endung
+  // ablesen. Bewusst KONSERVATIV: nur Nominativ wird im Singular aufgelöst; oblique
+  // Singularformen (dem/des/einem …) sind zu nomen-spezifisch (n-Deklination) und
+  // bleiben unangetastet.
+  const PART_FEM_SG  = new Set([  // + Endung -e  → feminines Nomen ("die Studierende")
+    "die","eine","keine","diese","jede","welche","manche","solche","irgendeine",
+    "jegliche","meine","deine","seine","ihre","unsere","eure",
+  ]);
+  const PART_MASC_SG = new Set([  // schwach (+ -e) bzw. stark (+ -er) → maskulines Nomen
+    "der","dieser","jeder","welcher","mancher","solcher","jeglicher",
+    "ein","kein","mein","dein","sein","unser","euer","irgendein",
+  ]);
+  const PART_SG_OBLIQUE = new Set([  // Dativ/Genitiv/Akk. Singular → unangetastet lassen
+    "dem","des","einem","eines","keinem","keines","diesem","dieses","jedem","jedes",
+    "meinem","meines","deinem","deines","seinem","seines","ihrem","ihres",
+    "welchem","welches","manchem","solchem","jeglichem",
+  ]);
+  const PART_PLURAL = new Set([   // + -e/-en → Plural
+    "die","alle","beide","viele","wenige","einige","etliche","mehrere","manche","solche",
+    "keine","diese","jene","meine","deine","seine","ihre","unsere","eure","sämtliche",
+    "den","denen","allen","beiden","vielen","wenigen","einigen","etlichen","mehreren",
+    "manchen","solchen","keinen","diesen","jenen","meinen","deinen","seinen","ihren",
+    "unseren","euren","sämtlichen","anderen",
+  ]);
+  // Funktionswörter (Präpositionen/Konjunktionen), nach denen ein artikelloser Plural
+  // folgt ("für Studierende", "von Lehrenden", "Studierende und Lehrende").
+  const PART_PLURAL_LEAD = new Set([
+    "für","fuer","gegen","ohne","um","durch","wider","per","pro","bis",
+    "mit","nach","bei","von","zu","aus","seit","ab","außer","ausser","gegenüber",
+    "gegenueber","entgegen","gemäß","gemaess","nebst","samt","mitsamt","binnen",
+    "und","oder","sowie","bzw","als","wie","sowohl","weder","noch",
+  ]);
+
   // Eindeutig Dativ regierende Auslöser direkt vor einem Plural: unzweideutige
   // Dativ-Präpositionen sowie Dativ-Plural-Determinative (z. B. "den …:innen" –
   // der Akkusativ Plural wäre "die", also ist "den" + Plural eindeutig Dativ).
@@ -500,6 +576,58 @@
       if (/^\p{Lu}/u.test(raw)) return false;    // Großschreibung → vermutlich Nomen
     }
     return false;
+  }
+
+  // Das für das Partizip maßgebliche Determinativ (kleingeschrieben). Sucht nach links
+  // und überspringt dabei attributive Adjektive ("liebe", "junge"), damit Anreden wie
+  // "Liebe Studierende" korrekt als Plural erkannt werden. Stoppt – analog zu
+  // isDativContext – an Klausel-Satzzeichen und an großgeschriebenen Wörtern (vermutlich
+  // Nomen), damit ein Determinativ NICHT über eine Phrasengrenze hinweg übergreift
+  // ("Die Universität bildet Studierende aus" → "Die" gehört zu Universität, nicht zum
+  // Partizip). Ein erkanntes Determinativ wird VOR dem Großschreibungs-Stopp geprüft,
+  // damit großgeschriebene Determinative am Satzanfang ("Eine …") noch greifen.
+  function leadDeterminer(text, offset) {
+    const toks = text.slice(0, offset).split(/\s+/);
+    for (let i = toks.length - 1, seen = 0; i >= 0 && seen < 4; i--) {
+      const raw = toks[i];
+      if (!raw) continue;
+      const core = raw.toLowerCase().replace(/[^a-zäöüß]/g, "");
+      if (!core) continue;
+      seen++;
+      if (PART_FEM_SG.has(core) || PART_MASC_SG.has(core) || PART_SG_OBLIQUE.has(core)
+          || PART_PLURAL.has(core) || PART_PLURAL_LEAD.has(core)) return core;
+      if (/[.,;:!?…]$/.test(raw)) return "";   // Klauselgrenze davor → artikellos
+      if (/^\p{Lu}/u.test(raw)) return "";     // großgeschrieben → vermutlich Nomen davor
+    }
+    return "";
+  }
+
+  // Löst ein substantiviertes Partizip auf Basis von vorangehendem Determinativ (lead)
+  // und Adjektivendung in die passende Nomenform auf. Gibt null zurück, wenn die
+  // Konstellation mehrdeutig/außerhalb des Scopes ist (→ Original bleibt stehen).
+  // Konservativ: Singular nur im Nominativ; oblique Singularformen bleiben unangetastet.
+  function resolveParticiple(lead, ending, prefix, entry, off, str) {
+    const attach = form => (prefix ? prefix + form[0].toLowerCase() + form.slice(1) : form);
+    const plural = () =>
+      attach(isDativContext(str, off) ? toDativPlural(entry.pl) : entry.pl);
+
+    if (PART_SG_OBLIQUE.has(lead)) return null;          // dem/des/einem … → unangetastet
+
+    if (ending === "er") {                               // starkes Mask. Nom. Sg. ("ein …er")
+      if (lead === "" || PART_MASC_SG.has(lead)) return attach(entry.m);
+      return null;
+    }
+    if (ending === "e") {
+      if (PART_FEM_SG.has(lead))  return entry.f ? attach(entry.f) : null;  // "die Studierende"
+      if (PART_MASC_SG.has(lead)) return attach(entry.m);                   // "der Studierende"
+      if (lead === "" || PART_PLURAL.has(lead) || PART_PLURAL_LEAD.has(lead)) return plural();
+      return null;
+    }
+    if (ending === "en") {                               // fast immer Plural ("die Studierenden")
+      if (lead === "" || PART_PLURAL.has(lead) || PART_PLURAL_LEAD.has(lead)) return plural();
+      return null;
+    }
+    return null;                                         // -em/-es → unangetastet
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -595,6 +723,16 @@
     ")(\\s+)(\\p{L}*?)(" + PSEUDO_FEM_ALT + ")(?![\\p{L}])",
     "giu"
   );
+  // Substantivierte Partizipien: optionaler Präfix (Kompositum, "Lehramts-studierende"),
+  // Partizip-Stamm aus der Allowlist, Adjektivendung. "en" vor "e", damit "studierenden"
+  // korrekt als Stamm+"en" greift. Der Lookahead `(?![\p{L}])` verlangt das Wortende
+  // (so bleibt "Studierendenwerk" o. Ä. unangetastet). Die Groß-/Kleinschreibung
+  // (Substantiv vs. attributives Adjektiv) prüft erst der Callback.
+  const PART_ALT = [...PARTICIPLE.keys()].sort((a, b) => b.length - a.length).join("|");
+  const reParticiple = new RegExp(
+    "(?<![\\p{L}])(\\p{L}*?)(" + PART_ALT + ")(en|e|er|em|es)(?![\\p{L}])",
+    "giu"
+  );
   // Singular-Artikel-Kongruenz: großgeschriebenes feminines Determinativ direkt vor
   // einer gegenderten Singularform ("Die Kolleg:in"). Die Großschreibung dient als
   // Signal für einen Nominativ-Satzanfang; kleingeschrieben mitten im Satz ist
@@ -626,6 +764,7 @@
       reAdjErMWithMarker.source,
       reIndefinitePronoun.source,
       rePseudoFem.source,
+      reParticiple.source,
       reInSlashInnen.source,
       reBinnenIPlural.source,
       reBinnenISingular.source,
@@ -663,7 +802,7 @@
     return resolveForm(stem, isPlural, getWikt(stem));
   }
 
-  function normalizeGenderedText(text) {
+  function normalizeGenderedText(text, participles = participlesEnabled) {
     if (!text) return text;
     let out = text.replace(/[\u00AD\u200B\u200C\u200D]/g, "");
     reAnyGenderPattern.lastIndex = 0;
@@ -726,6 +865,21 @@
     R(reInWithMarker,    (_, stem)     => replaceStem(stem, false));
     R(reInnenParen,      (_, stem, off, str) => plural(stem, off, str));
     R(reInParen,         (_, stem)     => replaceStem(stem, false));
+
+    // Substantivierte Partizipien (optional zuschaltbar). Nur großgeschrieben =
+    // Substantiv ("die Studierenden"); kleingeschrieben ist es ein attributives
+    // Adjektiv ("studierende Jugend") und bleibt unangetastet.
+    if (participles) {
+      R(reParticiple, (m, prefix, word, ending, off, str) => {
+        const first = (prefix || word)[0];
+        if (first.toLowerCase() === first && first.toUpperCase() !== first) return m; // klein → Adjektiv
+        const entry = PARTICIPLE.get(word.toLowerCase());
+        if (!entry) return m;
+        const lead = leadDeterminer(str, off);
+        const resolved = resolveParticiple(lead, ending.toLowerCase(), prefix, entry, off, str);
+        return resolved == null ? m : preserveCase(prefix || word, resolved);
+      });
+    }
 
     return out;
   }
@@ -1095,6 +1249,7 @@
       VERSION,
       LEXICON,
       PSEUDO_FEM,
+      PARTICIPLE,
       FALSE_POSITIVES,
       reAnyGenderPattern,
       preserveCase,

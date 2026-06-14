@@ -1,7 +1,7 @@
 "use strict";
 
 // ── Zustand ───────────────────────────────────────────────────
-const DEFAULT = { enabled: true, blockedDomains: [] };
+const DEFAULT = { enabled: true, blockedDomains: [], participles: true };
 let cfg = { ...DEFAULT };
 let tabHost = null;
 let toastTimer = null;
@@ -55,6 +55,9 @@ function render() {
   toggle.checked   = cfg.enabled;
   badge.className  = "status-badge " + (cfg.enabled ? "on" : "off");
   text.textContent = cfg.enabled ? "Aktiv" : "Deaktiviert";
+
+  // Partizip-Formen-Toggle (Default an, falls nicht gesetzt)
+  document.getElementById("participlesToggle").checked = cfg.participles !== false;
 
   // Domain-Liste
   const list = document.getElementById("domainList");
@@ -152,6 +155,15 @@ document.getElementById("enabledToggle").addEventListener("change", e => {
   saveConfig(
     { enabled: e.target.checked },
     e.target.checked ? "✓ NoGender aktiviert." : "NoGender deaktiviert."
+  );
+});
+
+document.getElementById("participlesToggle").addEventListener("change", e => {
+  saveConfig(
+    { participles: e.target.checked },
+    e.target.checked
+      ? "✓ Partizip-Formen werden ersetzt."
+      : "Partizip-Formen bleiben unverändert."
   );
 });
 

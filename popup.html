@@ -55,6 +55,13 @@
     }
     .toggle-label { flex: 1; font-weight: 500; }
     .toggle-sub   { font-size: 11px; color: #888; margin-top: 2px; }
+    .toggle-note  {
+      font-size: 11px; color: #666; line-height: 1.5;
+      background: #f5f8fc; border-left: 3px solid #1a6fd4;
+      border-radius: 0 5px 5px 0;
+      margin: 0 12px 10px; padding: 7px 9px;
+    }
+    .toggle-note b { color: #333; }
 
     .switch { position: relative; width: 42px; height: 24px; flex-shrink: 0; }
     .switch input { opacity: 0; width: 0; height: 0; }
@@ -211,7 +218,7 @@
 <div class="header">
   <span style="font-size:20px">🚫</span>
   <span class="header-title">NoGender</span>
-  <span class="header-version">v2.0.0</span>
+  <span class="header-version">v2.1.0</span>
 </div>
 
 <!-- Ein/Aus -->
@@ -231,6 +238,24 @@
       <input type="checkbox" id="enabledToggle" checked>
       <span class="slider"></span>
     </label>
+  </div>
+  <div class="toggle-row">
+    <div>
+      <div class="toggle-label">Partizip-Formen</div>
+      <div class="toggle-sub">„Studierende" → „Studenten", „Lehrende" → „Lehrer"</div>
+    </div>
+    <label class="switch">
+      <input type="checkbox" id="participlesToggle" checked>
+      <span class="slider"></span>
+    </label>
+  </div>
+  <div class="toggle-note">
+    <b>Vorteil:</b> ersetzt auch gegenderte Partizipien durch natürliche Formen –
+    z.&nbsp;B. „die Studierenden" → „die Studenten".<br>
+    <b>Schwierigkeit:</b> Partizipien tragen kein Sonderzeichen als Signal.<br>
+    <b>Nachteil:</b> in seltenen, mehrdeutigen Fällen kann eine Stelle übersehen oder
+    falsch ersetzt werden – z.&nbsp;B. „Studierende Eltern" → „Studenten Eltern".<br>
+    Bei Falschtreffern hier abschalten.
   </div>
 </div>
 
@@ -265,6 +290,8 @@
       <div class="form-item">Klammern (Lehrer(in))</div>
       <div class="form-item">Adjektive (eine*n)</div>
       <div class="form-item">Komposita (Teamleiter:in)</div>
+      <div class="form-item">Pseudo-Feminina (Gästin)</div>
+      <div class="form-item">Partizipien (Studierende)</div>
     </div>
   </div>
 </div>
