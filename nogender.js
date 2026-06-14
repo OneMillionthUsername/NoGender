@@ -26,6 +26,7 @@
 //
 // ── WÖRTERBUCH & FORMEN ("wie heißt das Wort entgendert?") ─────────────────
 //   LEXICON            Eingebaute Liste häufiger/unregelmäßiger Personenwörter (kuratiert, autoritativ).
+//   PSEUDO_FEM         Kuratierte Pseudo-Feminina ("Gästin", "Vorständin") → echtes Grundwort.
 //   resolveForm        Wählt die richtige Form: erst LEXICON, dann Wiktionary, dann Faustregel.
 //   toPlural           Faustregel zur Pluralbildung, wenn sonst nichts greift.
 //   toDativPlural      Hängt fürs Dativ ein -n an ("Lehrer" → "Lehrern").
@@ -51,6 +52,8 @@
 //   reAdjErMWithMarker Dativ-Maskulinum: "jeder:m" → "jedem".
 //   reGenderInfo       Stellenanzeigen-Kürzel "(m/w/d)" → wird entfernt.
 //   reIndefinitePronoun "mensch"/"frau" als Ersatz für "man" → "man".
+//   rePseudoFem        Pseudo-Feminina ohne Marker: "Gästin(nen)" → "Gast"/"Gäste".
+//   rePseudoFemArt     Artikel-Kongruenz davor: "Die Vorständin" → "Der Vorstand".
 //   reArtSingularNom   Artikel-Kongruenz am Satzanfang: "Die Kolleg:in" → "Der Kollege".
 //   reStandalone*Marker Ein Marker, der allein in einem Textknoten steht (für über
 //                      mehrere HTML-Tags verteilte Formen).
@@ -442,6 +445,32 @@
     ["manche","mancher"],["solche","solcher"],["jegliche","jeglicher"],["sämtliche","sämtlicher"],
   ]);
 
+  // Wie FEM_TO_MASC_NOM, aber → Neutrum (für Pseudo-Feminina mit neutralem Grundwort,
+  // z. B. "Die Mitgliedin" → "Das Mitglied"). Nur Nominativ Singular.
+  const FEM_TO_NEUT_NOM = new Map([
+    ["die","das"],["eine","ein"],["keine","kein"],["irgendeine","irgendein"],
+    ["meine","mein"],["deine","dein"],["seine","sein"],["ihre","ihr"],
+    ["unsere","unser"],["eure","euer"],
+    ["diese","dieses"],["jene","jenes"],["jede","jedes"],["welche","welches"],
+    ["manche","manches"],["solche","solches"],["jegliche","jegliches"],["sämtliche","sämtliches"],
+  ]);
+
+  // Pseudo-Feminina: künstliche -in-Ableitungen zu Grundwörtern, die GAR KEINE
+  // männliche Personenbezeichnung sind (Gast, Vorstand, Mensch, Mitglied …). Solche
+  // Formen ("Gästin", "Vorständin") existieren im Deutschen nicht – deshalb ist der
+  // Rückbau praktisch falsch-treffer-frei und braucht keine Heuristik, nur diese
+  // kuratierte Tabelle. Schlüssel = kleingeschriebene Singularform; der Plural wird
+  // über das angehängte "nen" (Gästin → Gästinnen) im Muster erkannt. `g` = Genus des
+  // Grundworts (m/n/f) für die Artikel-Kongruenz am Satzanfang.
+  const PSEUDO_FEM = new Map([
+    ["gästin",       { sg:"Gast",      pl:"Gäste",      g:"m" }],
+    ["vorständin",   { sg:"Vorstand",  pl:"Vorstände",  g:"m" }],
+    ["menschin",     { sg:"Mensch",    pl:"Menschen",   g:"m" }],
+    ["mitgliedin",   { sg:"Mitglied",  pl:"Mitglieder", g:"n" }],
+    ["mitgliederin", { sg:"Mitglied",  pl:"Mitglieder", g:"n" }],
+    ["fachkräftin",  { sg:"Fachkraft", pl:"Fachkräfte", g:"f" }],
+  ]);
+
   // Eindeutig Dativ regierende Auslöser direkt vor einem Plural: unzweideutige
   // Dativ-Präpositionen sowie Dativ-Plural-Determinative (z. B. "den …:innen" –
   // der Akkusativ Plural wäre "die", also ist "den" + Plural eindeutig Dativ).
@@ -544,6 +573,28 @@
   // Satzanfänge (großgeschrieben) werden nicht erfasst, um den Substantiv-
   // Sinn nicht zu zerstören.
   const reIndefinitePronoun     = /\b(?:mensch|frau)\b/g;
+  // Pseudo-Feminina (kein Marker): "Gästin"/"Gästinnen" – auch als Kompositum-KOPF
+  // ("Stammgästin" → "Stammgast", "Pflegefachkräftin" → "Pflegefachkraft"). Da kein
+  // echtes deutsches Wort auf "…gästin", "…mitgliedin" usw. endet, ist der optionale
+  // Präfix (`\p{L}*?`, kürzestmöglich) falsch-treffer-frei. Längere Schlüssel zuerst.
+  // Das optionale "nen" markiert den Plural. Der Lookahead `(?![\p{L}])` verlangt das
+  // Pseudo-Femininum am Wortende – ein Vorkommen MITTEN im Wort ("Stammgästinraum",
+  // "raum" folgt) bleibt damit bewusst unangetastet. Unicode-Wortgrenzen (umlautfest).
+  const PSEUDO_FEM_ALT = [...PSEUDO_FEM.keys()].sort((a, b) => b.length - a.length).join("|");
+  const rePseudoFem = new RegExp(
+    "(?<![\\p{L}])(\\p{L}*?)(" + PSEUDO_FEM_ALT + ")(nen)?(?![\\p{L}])",
+    "giu"
+  );
+  // Artikel-Kongruenz für Pseudo-Feminina im Singular, analog zu reArtSingularNom:
+  // großgeschriebenes feminines Determinativ direkt vor einem Pseudo-Femininum
+  // ("Die Vorständin" → "Der Vorstand", "Die Vereinsvorständin" → "Der Vereinsvorstand").
+  // Schreibt nur das Determinativ um; das Wort selbst bleibt für rePseudoFem stehen.
+  // `(?![\p{L}])` schließt den Plural (…innen) aus.
+  const rePseudoFemArt = new RegExp(
+    "\\b(" + [...FEM_TO_MASC_NOM.keys()].sort((a, b) => b.length - a.length).join("|") +
+    ")(\\s+)(\\p{L}*?)(" + PSEUDO_FEM_ALT + ")(?![\\p{L}])",
+    "giu"
+  );
   // Singular-Artikel-Kongruenz: großgeschriebenes feminines Determinativ direkt vor
   // einer gegenderten Singularform ("Die Kolleg:in"). Die Großschreibung dient als
   // Signal für einen Nominativ-Satzanfang; kleingeschrieben mitten im Satz ist
@@ -574,6 +625,7 @@
       reAdjRWithMarker.source,
       reAdjErMWithMarker.source,
       reIndefinitePronoun.source,
+      rePseudoFem.source,
       reInSlashInnen.source,
       reBinnenIPlural.source,
       reBinnenISingular.source,
@@ -626,6 +678,30 @@
 
     R(reGenderInfo,      ()            => "");
     R(reIndefinitePronoun, ()          => "man");
+    // Artikel-Kongruenz VOR dem Wort-Rückbau, damit das Pseudo-Femininum hier noch steht.
+    // Nur großgeschriebenes Determinativ (eindeutiger Nominativ-Satzanfang); kleingeschrieben
+    // mitten im Satz ist "die"/"eine" mehrdeutig und bleibt unangetastet. Feminine Grundwörter
+    // (Fachkraft) behalten ihren Artikel.
+    R(rePseudoFemArt, (m, det, ws, prefix, word) => {
+      if (det[0] === det[0].toLowerCase()) return m;       // nur großgeschrieben
+      const entry = PSEUDO_FEM.get(word.toLowerCase());
+      if (!entry || entry.g === "f") return m;
+      const map = entry.g === "n" ? FEM_TO_NEUT_NOM : FEM_TO_MASC_NOM;
+      const adj = map.get(det.toLowerCase());
+      return adj ? preserveCase(det, adj) + ws + prefix + word : m;
+    });
+    // Pseudo-Feminina zurückbauen: "Gästin"→"Gast", "Gästinnen"→"Gäste",
+    // als Kompositum-Kopf "Stammgästin"→"Stammgast" (Präfix behält Schreibung,
+    // Grundwort klein). Dativ Plural beachten: "mit den Gästinnen"→"mit den Gästen".
+    R(rePseudoFem, (m, prefix, word, nen, off, str) => {
+      const entry = PSEUDO_FEM.get(word.toLowerCase());
+      if (!entry) return m;
+      let form = nen ? entry.pl : entry.sg;
+      if (nen && isDativContext(str, off)) form = toDativPlural(form);
+      return prefix
+        ? prefix + form[0].toLowerCase() + form.slice(1)
+        : preserveCase(word, form);
+    });
     R(reAdjNWithMarker,  (_, stem)     => stem + "n");
     R(reAdjEWithMarker,  (_, stem)     => stem);
     R(reAdjRWithMarker,  (_, stem)     => stem + "r");
@@ -1018,6 +1094,7 @@
     module.exports = {
       VERSION,
       LEXICON,
+      PSEUDO_FEM,
       FALSE_POSITIVES,
       reAnyGenderPattern,
       preserveCase,

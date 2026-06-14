@@ -1,5 +1,8 @@
 # Changelog
-## 2.0.0 (2026-05-28)
+## Unreleased
+
+### Neue Funktionen
+- **Pseudo-Feminina-Rückbau (Phase 1)**: Künstliche `-in`-Ableitungen zu Grundwörtern, die gar keine männliche Personenbezeichnung sind, werden zum echten Grundwort zurückgeführt – „Gästin" → „Gast", „Vorständin" → „Vorstand", „Menschin" → „Mensch", „Mitgliedin"/„Mitgliederin" → „Mitglied", „Fachkräftin" → „Fachkraft", inkl. Plural („Gästinnen" → „Gäste") und Dativ Plural („mit den Gästinnen" → „mit den Gästen"). Da diese Wörter im Deutschen schlicht nicht existieren, ist der Rückbau praktisch falsch-treffer-frei und kommt ohne Heuristik aus – er nutzt eine kuratierte Tabelle (`PSEUDO_FEM`). Erkennt das Pseudo-Femininum auch als **Kompositum-Kopf/Suffix** – „Stammgästin" → „Stammgast", „Vereinsmitgliederinnen" → „Vereinsmitglieder", „Pflegefachkräftin" → „Pflegefachkraft" (Präfix behält seine Schreibung; da kein echtes Wort auf „…gästin", „…mitgliedin" usw. endet, falsch-treffer-frei). Steht ein **großgeschriebenes** feminines Determinativ direkt davor (Satzanfang = eindeutiger Nominativ), wird es ans Genus des Grundworts angepasst – „Die Vorständin" → „Der Vorstand" (m), „Die Mitgliedin" → „Das Mitglied" (n), „Die Fachkräftin" → „Die Fachkraft" (f, bleibt). Bewusst konservativ: ein Pseudo-Femininum *mitten* im Wort („Stammgästinraum"), kleingeschriebene (mehrdeutige) Artikel mitten im Satz und die echten Grundwörter bleiben unangetastet. (Geplante Phase 2: substantivierte Partizipien wie „Studierende"/„Forschende" mit Allow-/Schutzliste.)
 
 Erster **Open-Source-Release** unter der GNU GPL v3, zusammen mit mehreren
 Fehlerbehebungen und einer neuen Funktion. Wegen des Umfangs (Projekt-Infrastruktur +

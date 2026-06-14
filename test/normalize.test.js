@@ -6,7 +6,7 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const ng = require("../nogender.js");
 
-const { normalizeGenderedText, LEXICON } = ng;
+const { normalizeGenderedText, LEXICON, PSEUDO_FEM } = ng;
 
 // Hilfsfunktion: prüft Eingabe → erwartete Ausgabe.
 function expect(input, output) {
@@ -199,11 +199,81 @@ test("Text ohne Gendering bleibt identisch (Referenzgleichheit egal)", () => {
 });
 
 // ─────────────────────────────────────────────────────────────
+// Pseudo-Feminina ("Gästin", "Vorständin", …) – Phase 1
+// ─────────────────────────────────────────────────────────────
+test("Pseudo-Feminina Singular → Grundwort", () => {
+  expect("Gästin", "Gast");
+  expect("Vorständin", "Vorstand");
+  expect("Menschin", "Mensch");
+  expect("Mitgliedin", "Mitglied");
+  expect("Mitgliederin", "Mitglied");
+  expect("Fachkräftin", "Fachkraft");
+});
+
+test("Pseudo-Feminina Plural → Grundwort-Plural", () => {
+  expect("Gästinnen", "Gäste");
+  expect("Vorständinnen", "Vorstände");
+  expect("Menschinnen", "Menschen");
+  expect("Mitgliederinnen", "Mitglieder");
+  expect("Fachkräftinnen", "Fachkräfte");
+});
+
+test("Pseudo-Feminina im Satz mit Dativ Plural", () => {
+  expect("ein Abend mit den Gästinnen", "ein Abend mit den Gästen");
+  expect("Gespräch mit den Vorständinnen", "Gespräch mit den Vorständen");
+  expect("zusammen mit den Mitgliederinnen", "zusammen mit den Mitgliedern");
+  expect("eine Begrüßung der Gästinnen", "eine Begrüßung der Gäste"); // Genitiv, kein Dativ-n
+});
+
+test("Pseudo-Feminina – Groß-/Kleinschreibung wird übertragen", () => {
+  expect("liebe GÄSTINNEN", "liebe GÄSTE");
+});
+
+test("Pseudo-Feminina – Artikel-Kongruenz am Satzanfang", () => {
+  expect("Die Vorständin sprach", "Der Vorstand sprach");          // m
+  expect("Eine Gästin kam", "Ein Gast kam");                       // m
+  expect("Die Mitgliedin stimmte zu", "Das Mitglied stimmte zu");  // n
+  expect("Jede Mitgliederin zählt", "Jedes Mitglied zählt");       // n
+  expect("Die Fachkräftin fehlt", "Die Fachkraft fehlt");          // f → Artikel bleibt
+});
+
+test("Pseudo-Feminina – kleingeschriebener Artikel (mehrdeutig) bleibt", () => {
+  expect("Ich sah die Vorständin", "Ich sah die Vorstand");        // wie "die Kollege": konservativ
+});
+
+test("Pseudo-Feminina – Grundwörter bleiben unangetastet", () => {
+  for (const w of ["Gast", "Gäste", "Vorstand", "Vorstände", "Mensch", "Menschen",
+                   "Mitglied", "Mitglieder", "Fachkraft", "Fachkräfte"]) {
+    expect(w, w);
+  }
+});
+
+test("Pseudo-Feminina als Kompositum-Kopf (Suffix)", () => {
+  expect("Stammgästin", "Stammgast");
+  expect("Stammgästinnen", "Stammgäste");
+  expect("Vereinsmitgliederinnen", "Vereinsmitglieder");
+  expect("Pflegefachkräftin", "Pflegefachkraft");        // Fachkraft ist ohnehin feminin
+  expect("Die Vereinsvorständin trat zurück", "Der Vereinsvorstand trat zurück");
+});
+
+test("Pseudo-Femininum MITTEN im Wort bleibt unangetastet", () => {
+  expect("Stammgästinraum", "Stammgästinraum"); // "raum" folgt → kein Wort-Ende-Treffer
+});
+
+// ─────────────────────────────────────────────────────────────
 // Strukturelle Invarianten
 // ─────────────────────────────────────────────────────────────
 test("LEXICON-Schlüssel sind kleingeschrieben und Werte vollständig", () => {
   for (const [key, val] of LEXICON) {
     assert.equal(key, key.toLowerCase(), `Schlüssel nicht kleingeschrieben: ${key}`);
+    assert.ok(val.sg && val.pl, `sg/pl fehlt für: ${key}`);
+  }
+});
+
+test("PSEUDO_FEM-Schlüssel sind kleingeschrieben, enden auf -in und haben sg/pl", () => {
+  for (const [key, val] of PSEUDO_FEM) {
+    assert.equal(key, key.toLowerCase(), `Schlüssel nicht kleingeschrieben: ${key}`);
+    assert.ok(key.endsWith("in"), `Schlüssel endet nicht auf -in: ${key}`);
     assert.ok(val.sg && val.pl, `sg/pl fehlt für: ${key}`);
   }
 });
