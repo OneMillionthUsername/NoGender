@@ -354,6 +354,17 @@ test("Partizip – abschaltbar über Flag", () => {
 });
 
 // ─────────────────────────────────────────────────────────────
+// Lexikon-Ergänzungen
+// ─────────────────────────────────────────────────────────────
+test("Programmierer und Dienstleister (-er/-er, kuratiert)", () => {
+  expect("Programmierer:in", "Programmierer");
+  expect("Programmierer:innen", "Programmierer");
+  expect("Dienstleister*in", "Dienstleister");
+  expect("Dienstleister*innen", "Dienstleister");
+  expect("Softwareprogrammierer:innen", "Softwareprogrammierer");
+});
+
+// ─────────────────────────────────────────────────────────────
 // Strukturelle Invarianten
 // ─────────────────────────────────────────────────────────────
 test("LEXICON-Schlüssel sind kleingeschrieben und Werte vollständig", () => {

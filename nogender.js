@@ -349,6 +349,8 @@
     ["sprecher",        { sg:"Sprecher",           pl:"Sprecher"           }],
     ["nutzer",          { sg:"Nutzer",             pl:"Nutzer"             }],
     ["entwickler",      { sg:"Entwickler",         pl:"Entwickler"         }],
+    ["programmierer",   { sg:"Programmierer",      pl:"Programmierer"      }],
+    ["dienstleister",   { sg:"Dienstleister",      pl:"Dienstleister"      }],
     ["forscher",        { sg:"Forscher",           pl:"Forscher"           }],
     ["unternehmer",     { sg:"Unternehmer",        pl:"Unternehmer"        }],
     ["wissenschaftler", { sg:"Wissenschaftler",    pl:"Wissenschaftler"    }],
