@@ -1,0 +1,17 @@
+(Amoralismus/Intellekt) - falsch positiv  → erledigt in 3.0.0
+
+OPTIONAL: Offline-Personenwörterbuch aus Wiktionary
+- Wozu: Formen mit Leerzeichen ("Maurer: innen") auch dann erkennen, wenn der
+  Wiktionary-Lookup aus ist und die Seite das Wort nirgends kompakt gendert.
+  Der Online-Lookup würde damit weitgehend überflüssig ("vollständig lokal").
+- Umfang: ~11.000 Seiten mit {{Weibliche Wortformen}} (alle Sprachen, Stand 09/2026),
+  davon ~9–10.000 deutsch → ca. 100–150 KB.
+- Datenquelle: Build-Skript (z. B. tools/), gedrosselt über die API:
+  list=embeddedin für "Vorlage:Weibliche Wortformen" (~23 Anfragen), dann Inhalte
+  in 50er-Paketen (~220 Anfragen, ~10 min) – oder aus dem XML-Dump.
+  Einträge wie im LEXICON: Stamm = Femininform ohne "-in" ("Ärztin" → "ärzt")
+  → Maskulinum Singular + Plural. parseWiktionaryFlexion kann wiederverwendet werden.
+- Laden: nicht in jedem Frame (all_frames!) – Hintergrundskript mit Messaging oder
+  erst bei Bedarf nachladen; passt als weitere Quelle in prefetchLookups.
+- Lizenz: Wiktionary = CC BY-SA 4.0, kompatibel mit GPLv3; Quellenangabe in README
+  und Datendatei.
