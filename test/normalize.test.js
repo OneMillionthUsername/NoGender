@@ -224,11 +224,9 @@ test("Text ohne Gendering bleibt identisch (Referenzgleichheit egal)", () => {
 });
 
 // ─────────────────────────────────────────────────────────────
-// Pseudo-Feminina ("Gästin", "Vorständin", …) – Phase 1
+// Pseudo-Feminina ("Menschin", "Mitgliedin", "Fachkräftin") – Phase 1
 // ─────────────────────────────────────────────────────────────
 test("Pseudo-Feminina Singular → Grundwort", () => {
-  expect("Gästin", "Gast");
-  expect("Vorständin", "Vorstand");
   expect("Menschin", "Mensch");
   expect("Mitgliedin", "Mitglied");
   expect("Mitgliederin", "Mitglied");
@@ -236,53 +234,67 @@ test("Pseudo-Feminina Singular → Grundwort", () => {
 });
 
 test("Pseudo-Feminina Plural → Grundwort-Plural", () => {
-  expect("Gästinnen", "Gäste");
-  expect("Vorständinnen", "Vorstände");
   expect("Menschinnen", "Menschen");
+  expect("Mitgliedinnen", "Mitglieder");
   expect("Mitgliederinnen", "Mitglieder");
   expect("Fachkräftinnen", "Fachkräfte");
 });
 
 test("Pseudo-Feminina im Satz mit Dativ Plural", () => {
-  expect("ein Abend mit den Gästinnen", "ein Abend mit den Gästen");
-  expect("Gespräch mit den Vorständinnen", "Gespräch mit den Vorständen");
+  expect("ein Abend mit den Mitgliedinnen", "ein Abend mit den Mitgliedern");
   expect("zusammen mit den Mitgliederinnen", "zusammen mit den Mitgliedern");
-  expect("eine Begrüßung der Gästinnen", "eine Begrüßung der Gäste"); // Genitiv, kein Dativ-n
+  expect("eine Begrüßung der Mitgliedinnen", "eine Begrüßung der Mitglieder"); // Genitiv, kein Dativ-n
 });
 
 test("Pseudo-Feminina – Groß-/Kleinschreibung wird übertragen", () => {
-  expect("liebe GÄSTINNEN", "liebe GÄSTE");
+  expect("liebe MITGLIEDINNEN", "liebe MITGLIEDER");
 });
 
 test("Pseudo-Feminina – Artikel-Kongruenz am Satzanfang", () => {
-  expect("Die Vorständin sprach", "Der Vorstand sprach");          // m
-  expect("Eine Gästin kam", "Ein Gast kam");                       // m
+  expect("Die Menschin lacht", "Der Mensch lacht");                // m
   expect("Die Mitgliedin stimmte zu", "Das Mitglied stimmte zu");  // n
   expect("Jede Mitgliederin zählt", "Jedes Mitglied zählt");       // n
   expect("Die Fachkräftin fehlt", "Die Fachkraft fehlt");          // f → Artikel bleibt
 });
 
 test("Pseudo-Feminina – kleingeschriebener Artikel (mehrdeutig) bleibt", () => {
-  expect("Ich sah die Vorständin", "Ich sah die Vorstand");        // wie "die Kollege": konservativ
+  expect("Ich sah die Mitgliedin", "Ich sah die Mitglied");        // wie "die Kollege": konservativ
 });
 
 test("Pseudo-Feminina – Grundwörter bleiben unangetastet", () => {
-  for (const w of ["Gast", "Gäste", "Vorstand", "Vorstände", "Mensch", "Menschen",
-                   "Mitglied", "Mitglieder", "Fachkraft", "Fachkräfte"]) {
+  for (const w of ["Mensch", "Menschen", "Mitglied", "Mitglieder", "Fachkraft", "Fachkräfte"]) {
     expect(w, w);
   }
 });
 
 test("Pseudo-Feminina als Kompositum-Kopf (Suffix)", () => {
-  expect("Stammgästin", "Stammgast");
-  expect("Stammgästinnen", "Stammgäste");
   expect("Vereinsmitgliederinnen", "Vereinsmitglieder");
   expect("Pflegefachkräftin", "Pflegefachkraft");        // Fachkraft ist ohnehin feminin
-  expect("Die Vereinsvorständin trat zurück", "Der Vereinsvorstand trat zurück");
+  expect("Die Vereinsmitgliedin trat aus", "Das Vereinsmitglied trat aus");
 });
 
 test("Pseudo-Femininum MITTEN im Wort bleibt unangetastet", () => {
-  expect("Stammgästinraum", "Stammgästinraum"); // "raum" folgt → kein Wort-Ende-Treffer
+  expect("Mitgliedinnenversammlung", "Mitgliedinnenversammlung"); // kein Wort-Ende-Treffer
+});
+
+// Echte Feminina bezeichnen eine konkrete Frau und bleiben – auch seltene wie
+// "Gästin" (Wiktionary: selten) und "Vorständin" (Wirtschaftspresse).
+test("natürliche Feminina bleiben stehen", () => {
+  for (const w of ["Freundin", "meine Freundin", "Die Freundin kam", "Freundinnen",
+                   "Finanzvorständin", "Die Vorständin sprach", "Vorständinnen",
+                   "Gästin", "Stammgästin", "Liebe Gästinnen und Gäste",
+                   "Ärztin", "Lehrerinnen", "Kollegin"]) {
+    expect(w, w);
+  }
+});
+
+test("gegenderte Formen davon werden weiter aufgelöst", () => {
+  expect("Freund:innen", "Freunde");
+  expect("Vorständ:innen", "Vorstände");                              // vorher "Vorständen"
+  expect("Finanzvorständ:in", "Finanzvorständin");                    // wie Ärzt:in → Ärztin
+  expect("ein:e Vorständ:in", "ein Vorstand");
+  expect("Gäst:in", "Gästin");
+  expect("Gäst:innen", "Gäste");
 });
 
 // ─────────────────────────────────────────────────────────────

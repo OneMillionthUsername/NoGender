@@ -30,7 +30,7 @@
 //
 // ── WÖRTERBUCH & FORMEN (Auflösung in natürliche Formen) ───────────────────
 //   LEXICON            Kuratierte, autoritative Liste häufiger/unregelmäßiger Personenwörter.
-//   PSEUDO_FEM         Kuratierte Pseudo-Feminina ("Gästin", "Vorständin") → echtes Grundwort.
+//   PSEUDO_FEM         Kuratierte Pseudo-Feminina ("Menschin", "Mitgliedin") → echtes Grundwort.
 //   PARTICIPLE         Kuratierte Partizip-Substantive ("Studierende") → echtes Nomen (Allowlist).
 //   resolveParticiple  Bestimmt Numerus/Genus aus Determinativ + Endung (konservativ, nur Nominativ-Sg.).
 //   resolveForm        Wählt die Form: erst LEXICON, dann Wiktionary, dann regelbasiert.
@@ -63,8 +63,8 @@
 //   reAdjErMWithMarker Dativ-Maskulinum: "jeder:m" → "jedem".
 //   reGenderInfo       Stellenanzeigen-Kürzel "(m/w/d)" → wird entfernt.
 //   reIndefinitePronoun "mensch"/"frau" als Ersatz für "man" → "man".
-//   rePseudoFem        Pseudo-Feminina ohne Marker: "Gästin(nen)" → "Gast"/"Gäste".
-//   rePseudoFemArt     Artikel-Kongruenz davor: "Die Vorständin" → "Der Vorstand".
+//   rePseudoFem        Pseudo-Feminina ohne Marker: "Mitgliedin(nen)" → "Mitglied"/"Mitglieder".
+//   rePseudoFemArt     Artikel-Kongruenz davor: "Die Mitgliedin" → "Das Mitglied".
 //   reParticiple       Substantivierte Partizipien: "Studierende" → "Studenten" (Allowlist).
 //   reArtSingularNom   Artikel-Kongruenz am Satzanfang: "Die Kolleg:in" → "Der Kollege".
 //   reStandalone*Marker Ein Marker, der allein in einem Textknoten steht (für über
@@ -133,11 +133,11 @@
     } catch {}
   };
 
-  if (HAS_BROWSER) {
-    // Bis v2.1 lag der Wiktionary-Cache im sessionStorage der Seite – dort war er für
-    // die Webseite lesbar. Altlast einmalig entfernen.
-    try { sessionStorage.removeItem("nogender_wikt_cache"); } catch {}
+  // Statusmeldungen im Debug-Log nur für die eigentliche Seite, nicht für jeden
+  // (Werbe-)iframe – Ersetzungen ("✓ …") werden weiterhin in allen Frames protokolliert.
+  const IS_TOP_FRAME = typeof window !== "undefined" && window === window.top;
 
+  if (HAS_BROWSER) {
     browser.storage.local.get("nogender_debug").then(r => {
       debugEnabled = !!r.nogender_debug;
     }).catch(() => {});
@@ -183,7 +183,7 @@
       wiktionaryEnabled  = cfg.wiktionary !== false;
 
       if (!cfg.enabled || isBlockedDomain(cfg)) {
-        debug("Deaktiviert oder geblockt:", location.hostname);
+        if (IS_TOP_FRAME) debug("Deaktiviert oder geblockt:", location.hostname);
         return;
       }
 
@@ -363,8 +363,8 @@
     ["bäuer",           { sg:"Bäuerin",    m:"Bauer",     pl:"Bauern"    }],
     ["französ",         { sg:"Französin",  m:"Franzose",  pl:"Franzosen" }],
     ["jüd",             { sg:"Jüdin",      m:"Jude",      pl:"Juden"     }],
-    // "Gäst:innen" – das Femininum "Gästin" wäre selbst ein Pseudo-Femininum (PSEUDO_FEM).
-    ["gäst",            { sg:"Gast",                      pl:"Gäste"     }],
+    ["gäst",            { sg:"Gästin",     m:"Gast",      pl:"Gäste"     }],
+    ["vorständ",        { sg:"Vorständin", m:"Vorstand",  pl:"Vorstände" }],
     // Umlaut-Plurale
     ["koch",            { sg:"Koch",               pl:"Köche"              }],
     // -e/-en-Plurale (Stamm ≠ Singular oder irregulärer Plural)
@@ -647,16 +647,15 @@
     for (const ending of ["","e","en","em","es","er"]) NOUN_DETERMINERS.add(base + ending);
   }
 
-  // Pseudo-Feminina: künstliche -in-Ableitungen zu Grundwörtern, die GAR KEINE
-  // männliche Personenbezeichnung sind (Gast, Vorstand, Mensch, Mitglied …). Solche
-  // Formen ("Gästin", "Vorständin") existieren im Deutschen nicht – deshalb ist der
-  // Rückbau praktisch falsch-treffer-frei und braucht keine Heuristik, nur diese
-  // kuratierte Tabelle. Schlüssel = kleingeschriebene Singularform; der Plural wird
-  // über das angehängte "nen" (Gästin → Gästinnen) im Muster erkannt. `g` = Genus des
-  // Grundworts (m/n/f) für die Artikel-Kongruenz am Satzanfang.
+  // Pseudo-Feminina: künstliche -in-Ableitungen zu Grundwörtern, die schon alle
+  // Geschlechter umfassen (der Mensch, das Mitglied, die Fachkraft). Sie stehen in keinem
+  // Wörterbuch oder nur als Scherzwort ("Menschin") – deshalb ist der Rückbau praktisch
+  // falsch-treffer-frei und braucht keine Heuristik, nur diese kuratierte Tabelle. NICHT
+  // hierher gehören echte Feminina, die eine konkrete Frau bezeichnen: "Vorständin" und
+  // "Gästin" bleiben wie "Ärztin" oder "Freundin" stehen. Schlüssel = kleingeschriebene
+  // Singularform; der Plural wird über das angehängte "nen" (Mitgliedin → Mitgliedinnen)
+  // im Muster erkannt. `g` = Genus des Grundworts (m/n/f) für die Artikel-Kongruenz.
   const PSEUDO_FEM = new Map([
-    ["gästin",       { sg:"Gast",      pl:"Gäste",      g:"m" }],
-    ["vorständin",   { sg:"Vorstand",  pl:"Vorstände",  g:"m" }],
     ["menschin",     { sg:"Mensch",    pl:"Menschen",   g:"m" }],
     ["mitgliedin",   { sg:"Mitglied",  pl:"Mitglieder", g:"n" }],
     ["mitgliederin", { sg:"Mitglied",  pl:"Mitglieder", g:"n" }],
@@ -942,13 +941,13 @@
   // Sinn nicht zu zerstören. Nach einem Determinativ ("jeder mensch", "meine frau")
   // ist es in klein geschriebenen Texten ebenfalls das Substantiv (NOUN_DETERMINERS).
   const reIndefinitePronoun     = /\b(?:mensch|frau)\b/g;
-  // Pseudo-Feminina (kein Marker): "Gästin"/"Gästinnen" – auch als Kompositum-KOPF
-  // ("Stammgästin" → "Stammgast", "Pflegefachkräftin" → "Pflegefachkraft"). Da kein
-  // echtes deutsches Wort auf "…gästin", "…mitgliedin" usw. endet, ist der optionale
-  // Präfix (`\p{L}*?`, kürzestmöglich) falsch-treffer-frei. Längere Schlüssel zuerst.
-  // Das optionale "nen" markiert den Plural. Der Lookahead `(?![\p{L}])` verlangt das
-  // Pseudo-Femininum am Wortende – ein Vorkommen MITTEN im Wort ("Stammgästinraum",
-  // "raum" folgt) bleibt damit bewusst unangetastet. Unicode-Wortgrenzen (umlautfest).
+  // Pseudo-Feminina (kein Marker): "Mitgliedin"/"Mitgliedinnen" – auch als Kompositum-KOPF
+  // ("Vereinsmitgliedin" → "Vereinsmitglied", "Pflegefachkräftin" → "Pflegefachkraft"). Da
+  // kein echtes deutsches Wort auf "…mitgliedin", "…fachkräftin" usw. endet, ist der
+  // optionale Präfix (`\p{L}*?`, kürzestmöglich) falsch-treffer-frei. Längere Schlüssel
+  // zuerst. Das optionale "nen" markiert den Plural. Der Lookahead `(?![\p{L}])` verlangt
+  // das Pseudo-Femininum am Wortende – ein Vorkommen MITTEN im Wort
+  // ("Mitgliedinnenversammlung") bleibt damit bewusst unangetastet. Unicode-Wortgrenzen.
   const PSEUDO_FEM_ALT = [...PSEUDO_FEM.keys()].sort((a, b) => b.length - a.length).join("|");
   const rePseudoFem = new RegExp(
     "(?<![\\p{L}])(\\p{L}*?)(" + PSEUDO_FEM_ALT + ")(nen)?(?![\\p{L}])",
@@ -956,7 +955,7 @@
   );
   // Artikel-Kongruenz für Pseudo-Feminina im Singular, analog zu reArtSingularNom:
   // großgeschriebenes feminines Determinativ direkt vor einem Pseudo-Femininum
-  // ("Die Vorständin" → "Der Vorstand", "Die Vereinsvorständin" → "Der Vereinsvorstand").
+  // ("Die Mitgliedin" → "Das Mitglied", "Die Vereinsmitgliedin" → "Das Vereinsmitglied").
   // Schreibt nur das Determinativ um; das Wort selbst bleibt für rePseudoFem stehen.
   // `(?![\p{L}])` schließt den Plural (…innen) aus.
   const rePseudoFemArt = new RegExp(
@@ -1179,9 +1178,9 @@
       const adj = map.get(det.toLowerCase());
       return adj ? preserveCase(det, adj) + ws + prefix + word : m;
     });
-    // Pseudo-Feminina zurückbauen: "Gästin"→"Gast", "Gästinnen"→"Gäste",
-    // als Kompositum-Kopf "Stammgästin"→"Stammgast" (Präfix behält Schreibung,
-    // Grundwort klein). Dativ Plural beachten: "mit den Gästinnen"→"mit den Gästen".
+    // Pseudo-Feminina zurückbauen: "Mitgliedin"→"Mitglied", "Mitgliedinnen"→"Mitglieder",
+    // als Kompositum-Kopf "Vereinsmitgliedin"→"Vereinsmitglied" (Präfix behält Schreibung,
+    // Grundwort klein). Dativ Plural beachten: "mit den Mitgliedinnen"→"mit den Mitgliedern".
     R(rePseudoFem, (m, prefix, word, nen, off, str) => {
       const entry = PSEUDO_FEM.get(word.toLowerCase());
       if (!entry) return m;
@@ -1698,7 +1697,7 @@
     normalizeSvgText(root);
     normalizeShadowDom(root);
     await replaceGenderedLanguageInDOM(root);
-    debug("NoGender v" + VERSION + " aktiv auf:", location.hostname);
+    if (IS_TOP_FRAME) debug("NoGender v" + VERSION + " aktiv auf:", location.hostname);
   }
 
   // Reine Funktionen für die Testsuite exportieren (nur unter Node/CommonJS;

@@ -11,6 +11,7 @@ Umfassende Überarbeitung nach einem Projekt-Review: Falschtreffer in normalem T
 - **Klammern verschwanden**: Eine gegenderte Form direkt vor „)" oder „]" nahm die Klammer mit – „Kontakt (Ansprechpartner:in) anrufen" → „Kontakt (Ansprechpartner anrufen", „(Ärzt:innen)" → „(Ärzte". Die schließende Klammer gehört jetzt nur noch zur Form, wenn direkt vor dem Marker eine öffnende steht („Lehrer(:in)").
 - **Slash-Form „PatientIn/Innen"**: Dem Muster fehlte das `u`-Flag, `\p{L}` griff nie, und ein anderes Muster machte „PatientInen" daraus. Jetzt → „Patienten". Die natürliche Femininform „Lehrerin/innen" bleibt stehen (vorher „Lehrerinen").
 - **Unsichtbare Zeichen**: Weiche Trennstriche und Nullbreiten-Zeichen wurden aus dem *ganzen* Text entfernt – auch ohne Gendering (Attribute, Titel und JSON-LD wurden grundlos umgeschrieben) und inklusive U+200D, das Emoji-Sequenzen zusammenhält („👩‍💻" zerfiel). Jetzt nur noch in Wörtern, die danach gegendert aussehen.
+- **Echte Feminina wurden umgewandelt**: „Finanzvorständin" → „Finanzvorstand", „Die Vorständin" → „Der Vorstand", „Gästin" → „Gast". Diese Formen bezeichnen eine konkrete Frau – wie „Ärztin" oder „Freundin" – und bleiben jetzt stehen. Als Pseudo-Feminina gelten nur noch Kunst- und Scherzwörter, deren Grundwort schon alle Geschlechter umfasst: „Menschin", „Mitgliedin", „Mitgliederin", „Fachkräftin". Gegenderte Formen werden weiter aufgelöst, „Vorständ:innen" jetzt mit korrektem Plural „Vorstände" (vorher „Vorständen").
 - **Genus nach Determinativ**: „jede:r Ärzt:in" → „jeder Ärztin", „ein:e Ärzt:in" → „ein Ärztin". Nach maskulinem oder gegendertem Determinativ wird jetzt das Maskulinum gewählt („jeder Arzt"); „mit der Ärzt:in" bleibt „mit der Ärztin".
 - **Versal-Komposita**: „MITARBEITER:INNEN" → „MITarbeiter". Ein exakter LEXICON-Treffer geht jetzt vor die Kompositum-Zerlegung, und in Versalwörtern bleibt der Kopf groß.
 - **„mensch"/„frau" nach Determinativ**: In klein geschriebenen Texten wurde „jeder mensch" zu „jeder man" und „meine frau" zu „meine man". Nach Artikel, Possessivum oder „als" bleibt das Substantiv jetzt stehen.
@@ -22,7 +23,7 @@ Umfassende Überarbeitung nach einem Projekt-Review: Falschtreffer in normalem T
 
 ### Datenschutz
 - **Wiktionary ohne Cookies und Referer** (`credentials: "omit"`, `referrerPolicy: "no-referrer"`): Bisher konnte der Referer die besuchte Website mitschicken.
-- **Cache im Erweiterungsspeicher statt im sessionStorage der Webseite**: Der Cache lag im Speicher der jeweiligen Website, war dort für deren Skripte lesbar und verriet die Erweiterung samt nachgeschlagener Wörter. Jetzt in `browser.storage.local` (ein Schlüssel je Wort, 30 Tage gültig, seitenübergreifend) – weniger Anfragen, für Websites unsichtbar. Der alte Eintrag wird entfernt.
+- **Cache im Erweiterungsspeicher statt im sessionStorage der Webseite**: Der Cache lag im Speicher der jeweiligen Website, war dort für deren Skripte lesbar und verriet die Erweiterung samt nachgeschlagener Wörter. Jetzt in `browser.storage.local` (ein Schlüssel je Wort, 30 Tage gültig, seitenübergreifend) – weniger Anfragen, für Websites unsichtbar. Alte Einträge verschwinden mit dem Schließen des Tabs von selbst; die Erweiterung greift gar nicht mehr auf den Speicher der Seite zu (vorher löste das in Werbe-iframes Firefox-Hinweise zu „partitioniertem Speicherzugriff" aus).
 - **Weniger Anfragen**: Nachgeschlagen wird nur, was lokal nicht lösbar ist – nicht mehr bei Komposita mit Lexikon-Kopf, sicher geregelten Endungen („Mieter:innen") oder strukturell ausgeschlossenen Treffern („Termin: in Kürze").
 - **Wiktionary-Lookup abschaltbar**: neuer Schalter im Popup (Standard: an). README und Manifest nannten den Lookup schon „optional" – jetzt ist er es.
 - **`activeTab` statt `tabs`**: Das Popup braucht nur die URL des aktiven Tabs, und zwar nur, solange es offen ist. Die weitreichende Berechtigung zum Lesen aller Tabs (Installationswarnung „Auf Browsertabs zugreifen") entfällt.
@@ -41,12 +42,13 @@ Umfassende Überarbeitung nach einem Projekt-Review: Falschtreffer in normalem T
 - **Artikel-/Pronomenpaare**: „der*die Nutzer*in" → „der Nutzer", „die/der" → „der", „sie/er" → „er", „seine:ihre" → „seine" (nur kompakt; „der/die/das" bleibt).
 - **Genus-Kürzel**: zusätzlich „(m/f/d)", „(w/m/x)", „(div)", „(all genders)", „(alle Geschlechter)", „(gn)".
 - **Weitere Marker**: ∗ ⁎ ꞉ ∶ (typografische Varianten von Stern und Doppelpunkt).
-- **Lexikon**: Programmierer, Dienstleister, Kunde, Experte, Genosse, Zeuge/Augenzeuge, Gast („Gäst:innen"), Türke, Grieche, Tscheche, Slowake, Franzose, Jude, Chef, Fan, Hotelier, Bankier, Kapitän, Akteur, Präsident, Leiter, Meister, Minister, Kanzler, Vertreter, Anwohner, -nehmer, -geber, Täter, Sportler, Erzieher, Käufer, Hersteller, Betreuer, Zuschauer, Zuhörer, Kämpfer, Designer, Manager, Mieter, Inhaber, Anleger, Investor, Sparer, Empfänger, Zahler, Rentner, Schuldner, Gläubiger, Vermittler, Makler, Azubi. Neue optionale Felder: `m` (Maskulinum bei femininem `sg`) und `exact` (kein Kompositum-Kopf – „zeug" wegen „Fahrzeug").
+- **Lexikon**: Programmierer, Dienstleister, Kunde, Experte, Genosse, Zeuge/Augenzeuge, Gast/Gästin („Gäst:innen"), Vorstand/Vorständin („Vorständ:innen"), Türke, Grieche, Tscheche, Slowake, Franzose, Jude, Chef, Fan, Hotelier, Bankier, Kapitän, Akteur, Präsident, Leiter, Meister, Minister, Kanzler, Vertreter, Anwohner, -nehmer, -geber, Täter, Sportler, Erzieher, Käufer, Hersteller, Betreuer, Zuschauer, Zuhörer, Kämpfer, Designer, Manager, Mieter, Inhaber, Anleger, Investor, Sparer, Empfänger, Zahler, Rentner, Schuldner, Gläubiger, Vermittler, Makler, Azubi. Neue optionale Felder: `m` (Maskulinum bei femininem `sg`) und `exact` (kein Kompositum-Kopf – „zeug" wegen „Fahrzeug").
 - **Popup**: Version aus dem Manifest; Barrierefreiheit (Beschriftungen für alle Schalter, sichtbarer Tastaturfokus, Buttons statt Links ohne Ziel, Statusmeldungen per `aria-live`).
 
 ### Wartung
 - **Eine Versionsquelle**: Popup und Content-Script lesen die Version aus dem Manifest; ein Test prüft den Gleichlauf von `manifest.json` und `package.json`.
-- **Tests**: 28 neue Testfälle (78 insgesamt), darunter die Invariante „Vorfilter übersieht nichts" über alle Testeingaben.
+- **Ruhigeres Debug-Log**: Die Statuszeile „aktiv auf …" erscheint nur noch für die eigentliche Seite, nicht für jeden Werbe-iframe; Ersetzungen werden weiterhin in allen Frames protokolliert.
+- **Tests**: 30 neue Testfälle (80 insgesamt), darunter die Invariante „Vorfilter übersieht nichts" über alle Testeingaben.
 
 ---
 
