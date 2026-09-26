@@ -79,6 +79,9 @@
     }
     input:checked + .slider             { background: #1a6fd4; }
     input:checked + .slider::before     { transform: translateX(18px); }
+    /* Die Checkbox selbst ist unsichtbar – Tastaturfokus am Schieber zeigen. */
+    input:focus-visible + .slider,
+    input:focus-visible + .debug-slider { outline: 2px solid #1a6fd4; outline-offset: 2px; }
 
     .status-badge {
       display: inline-flex; align-items: center; gap: 5px;
@@ -148,10 +151,12 @@
     .current-hint {
       font-size: 11px; color: #888; margin-top: 7px; line-height: 1.5;
     }
-    .current-hint a {
+    .current-hint .link-btn {
+      background: none; border: none; padding: 0; font: inherit;
       color: #1a6fd4; cursor: pointer; font-weight: 500; text-decoration: none;
     }
-    .current-hint a:hover { text-decoration: underline; }
+    .current-hint .link-btn:hover,
+    .current-hint .link-btn:focus-visible { text-decoration: underline; }
 
     .forms-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 10px; }
     .form-item  { font-size: 12px; color: #555; padding: 2px 0; }
@@ -218,14 +223,15 @@
 <div class="header">
   <span style="font-size:20px">🚫</span>
   <span class="header-title">NoGender</span>
-  <span class="header-version">v2.1.0</span>
+  <!-- Version wird aus dem Manifest gelesen (popup.js) -->
+  <span class="header-version" id="version"></span>
 </div>
 
 <!-- Ein/Aus -->
 <div class="section">
   <div class="toggle-row">
     <div>
-      <div class="toggle-label">
+      <div class="toggle-label" id="enabledLabel">
         NoGender
         <span class="status-badge on" id="statusBadge">
           <span class="status-dot"></span>
@@ -235,17 +241,17 @@
       <div class="toggle-sub">Gendersprache wird automatisch ersetzt</div>
     </div>
     <label class="switch">
-      <input type="checkbox" id="enabledToggle" checked>
+      <input type="checkbox" id="enabledToggle" checked aria-labelledby="enabledLabel">
       <span class="slider"></span>
     </label>
   </div>
   <div class="toggle-row">
     <div>
-      <div class="toggle-label">Partizip-Formen</div>
+      <div class="toggle-label" id="participlesLabel">Partizip-Formen</div>
       <div class="toggle-sub">„Studierende" → „Studenten", „Lehrende" → „Lehrer"</div>
     </div>
     <label class="switch">
-      <input type="checkbox" id="participlesToggle" checked>
+      <input type="checkbox" id="participlesToggle" checked aria-labelledby="participlesLabel">
       <span class="slider"></span>
     </label>
   </div>
@@ -256,6 +262,16 @@
     <b>Nachteil:</b> in seltenen, mehrdeutigen Fällen kann eine Stelle übersehen oder
     falsch ersetzt werden – z.&nbsp;B. „Studierende Eltern" → „Studenten Eltern".<br>
     Bei Falschtreffern hier abschalten.
+  </div>
+  <div class="toggle-row">
+    <div>
+      <div class="toggle-label" id="wiktionaryLabel">Wiktionary-Lookup</div>
+      <div class="toggle-sub">Seltene Wörter bei de.wiktionary.org nachschlagen</div>
+    </div>
+    <label class="switch">
+      <input type="checkbox" id="wiktionaryToggle" checked aria-labelledby="wiktionaryLabel">
+      <span class="slider"></span>
+    </label>
   </div>
 </div>
 
@@ -270,7 +286,7 @@
              spellcheck="false" autocomplete="off">
       <button id="addBtn">+ Hinzufügen</button>
     </div>
-    <div class="toast" id="toast"></div>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <div class="current-hint" id="currentHint"></div>
   </div>
 </div>
@@ -292,6 +308,8 @@
       <div class="form-item">Komposita (Teamleiter:in)</div>
       <div class="form-item">Pseudo-Feminina (Gästin)</div>
       <div class="form-item">Partizipien (Studierende)</div>
+      <div class="form-item">Artikelpaare (der*die)</div>
+      <div class="form-item">Genus-Kürzel ((m/w/d))</div>
     </div>
   </div>
 </div>
@@ -307,8 +325,10 @@
       <span class="privacy-tag">🚫 Keine Werbung</span>
     </div>
     <p style="margin-top:8px;font-size:11px;color:#888;line-height:1.5">
-      Unbekannte Wörter werden anonym über de.wiktionary.org nachgeschlagen
-      und lokal im Browser zwischengespeichert (sessionStorage).
+      Unbekannte Wörter werden – ohne Cookies und ohne Angabe der besuchten Seite –
+      bei de.wiktionary.org nachgeschlagen und 30 Tage im Erweiterungsspeicher
+      zwischengespeichert (für Webseiten nicht sichtbar). Abschaltbar über
+      „Wiktionary-Lookup" oben.
     </p>
   </div>
 </div>
@@ -350,10 +370,10 @@
 <!-- Debug -->
 <div class="debug-row" id="debugRow">
   <label class="debug-switch">
-    <input type="checkbox" id="debugToggle">
+    <input type="checkbox" id="debugToggle" aria-labelledby="debugLabel">
     <span class="debug-slider"></span>
   </label>
-  Debug-Modus (Ausgabe in Browser-Konsole)
+  <span id="debugLabel">Debug-Modus (Ausgabe in Browser-Konsole)</span>
 </div>
 
 <script src="popup.js"></script>

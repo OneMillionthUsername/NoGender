@@ -4,14 +4,39 @@
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const ng = require("../nogender.js");
 
-const { normalizeGenderedText, LEXICON, PSEUDO_FEM, PARTICIPLE } = ng;
+const {
+  normalizeGenderedText, applyPatterns, hasGenderCandidate, collectLookupStems,
+  parseWiktionaryFlexion, splitCompound, toPlural, toSingular, wiktCache,
+  LEXICON, PSEUDO_FEM, PARTICIPLE,
+} = ng;
+
+// Unsichtbare Zeichen im Klartext wären im Quelltext nicht zu erkennen.
+const SHY  = String.fromCharCode(0x00AD);   // weiches Trennzeichen (&shy;)
+const ZWSP = String.fromCharCode(0x200B);   // Nullbreiten-Leerzeichen
+const ZWJ  = String.fromCharCode(0x200D);   // Nullbreiten-Verbinder (Emoji-Sequenzen)
+const MOD_COLON = String.fromCharCode(0xA789);   // ꞉ "modifier letter colon" (sieht aus wie ":")
+const AST_OP    = String.fromCharCode(0x2217);   // ∗ "asterisk operator"
+
+// Alle geprüften Eingaben – für den Vorfilter-Test am Dateiende.
+const seenInputs = [];
 
 // Hilfsfunktion: prüft Eingabe → erwartete Ausgabe.
 function expect(input, output) {
+  seenInputs.push(input);
   assert.equal(normalizeGenderedText(input), output);
 }
+
+// Simuliert einen Wiktionary-Treffer im Cache (ohne Netz) für die Dauer von `fn`.
+function withWikt(entries, fn) {
+  for (const [word, forms] of Object.entries(entries)) wiktCache.set(word, forms);
+  try { fn(); } finally { for (const word of Object.keys(entries)) wiktCache.delete(word); }
+}
+const wiktPerson = (sg, pl) => ({ sg: { nom: sg }, pl: { nom: pl }, person: true });
+const wiktNoun   = (sg, pl) => ({ sg: { nom: sg }, pl: { nom: pl }, person: false });
 
 // ─────────────────────────────────────────────────────────────
 // Regressionstests zu den in v2.0.0 gemeldeten Bugs
@@ -365,12 +390,301 @@ test("Programmierer und Dienstleister (-er/-er, kuratiert)", () => {
 });
 
 // ─────────────────────────────────────────────────────────────
+// Falschtreffer: Marker mit Leerzeichen, großes "I", Formeln (v3.0.0)
+// ─────────────────────────────────────────────────────────────
+test("Doppelpunkt/Stern/Mittelpunkt mit Leerzeichen ist normales Deutsch", () => {
+  expect("Termin: in zwei Wochen", "Termin: in zwei Wochen");
+  expect("Wohnhaft: in Berlin", "Wohnhaft: in Berlin");
+  expect("ausgeübt: In Zivil- und Strafsachen", "ausgeübt: In Zivil- und Strafsachen");
+  expect("Farbe: innen weiß, außen blau", "Farbe: innen weiß, außen blau");
+  expect("Startseite · in eigener Sache", "Startseite · in eigener Sache");
+  expect("Preis* in Euro", "Preis* in Euro");
+  expect("Lehrer: in der Schule", "Lehrer: in der Schule");            // Präposition, auch nach Person
+  expect("Wechselrichter: in Betrieb", "Wechselrichter: in Betrieb");
+  expect("Bauer: Innenpolitisch ist das schwierig", "Bauer: Innenpolitisch ist das schwierig");
+});
+
+test("Klammer mit Leerzeichen: (innen)/(in) bei Nicht-Personen bleibt", () => {
+  expect("Maße (innen): 30 cm", "Maße (innen): 30 cm");
+  expect("Tür (innen) lackiert", "Tür (innen) lackiert");
+  expect("Lehrer (innen)", "Lehrer");                                  // Person → weiterhin aufgelöst
+});
+
+test("Leerzeichen-Formen nur bei sicher belegter Person", () => {
+  expect("Lehrer: innen", "Lehrer");
+  expect("Lehrer :innen", "Lehrer");
+  expect("Mieter: innen", "Mieter");                                   // Lexikon
+  expect("Maurer: innen", "Maurer: innen");                            // ohne Wiktionary kein Beleg
+  expect("Lautsprecher: innen und außen", "Lautsprecher: innen und außen");  // "-sprecher" genügt nicht
+  expect("Fahrzeug: innen und außen gereinigt", "Fahrzeug: innen und außen gereinigt");
+  withWikt({ maurer: wiktPerson("Maurer", "Maurer"), farbe: wiktNoun("Farbe", "Farben") }, () => {
+    expect("Maurer: innen", "Maurer");
+    expect("Farbe: innen weiß", "Farbe: innen weiß");                  // Substantiv, aber keine Person
+  });
+});
+
+test("großes I direkt am Marker ist Gender-Schreibung – auch ohne Lexikon", () => {
+  expect("Lehrer*Innen", "Lehrer");
+  expect("Student*Innen", "Studenten");
+  expect("Maurer*Innen", "Maurer");
+  expect("Maurer:Innen", "Maurer");
+  expect("Maurer_In", "Maurer");
+  expect("Maurer*In gesucht", "Maurer gesucht");
+  expect("MITARBEITER:INNEN GESUCHT", "MITARBEITER GESUCHT");           // Versalien zählen als klein
+});
+
+test("großes I: nach „/“ und bei „:In“ vor einem Wort nur mit Personenbeleg (todo.txt)", () => {
+  expect("Lehrer/In gesucht", "Lehrer gesucht");                        // Lexikon
+  expect("Maurer/Innen", "Maurer/Innen");                               // kein Beleg
+  expect("Außen/Innen-Bereich", "Außen/Innen-Bereich");
+  expect("Hinweis:In diesem Fall", "Hinweis:In diesem Fall");           // fehlendes Leerzeichen
+  // Textknoten endet mitten im Wort ("…/In<em>tellekt</em>") bzw. Worttrennung:
+  expect("(Amoralismus/In", "(Amoralismus/In");
+  expect("(Amoralismus/In- tellekt)", "(Amoralismus/In- tellekt)");
+  expect("Kategorie:Innenpolitik", "Kategorie:Innenpolitik");
+  expect("Datei:Innenraum.jpg", "Datei:Innenraum.jpg");
+});
+
+test("Leerzeichen-Form bei Komposita, deren Kopf allein kein Wort ist", () => {
+  expect("Liebe Privatkund: innen", "Liebe Privatkunden");              // "kund" ← Kunde
+  expect("Firmenkund :innen", "Firmenkunden");
+  expect("Fachärzt: innen", "Fachärzte");
+  expect("Arbeitskolleg: innen", "Arbeitskollegen");
+  expect("Lautsprecher: innen", "Lautsprecher: innen");                  // "sprecher" ist ein Wort
+  expect("Halbleiter: innen", "Halbleiter: innen");
+});
+
+test("Bank-Texte mit Leerzeichen am Doppelpunkt", () => {
+  expect("Liebe Kund: innen, unsere Kundenberater: innen helfen gern",
+         "Liebe Kunden, unsere Kundenberater helfen gern");            // Text gendert → freier Kopf ok
+  expect("Kund: innen und Kontoinhaber: innen", "Kunden und Kontoinhaber");
+  expect("Für Anleger: innen und Sparer: innen", "Für Anleger und Sparer");
+  expect("Investor: innen", "Investoren");
+  expect("Sparer: innen", "Sparer");
+  expect("Investor:innen und Privatinvestor: innen", "Investoren und Privatinvestoren");
+  expect("mit Investor: innen", "mit Investoren");                      // Dativ
+  expect("Kontoinhaber: innen", "Kontoinhaber: innen");                 // allein: könnte ein Gerät sein
+  expect("Azubi:innen", "Azubis");
+  expect("Steuerzahler:innen", "Steuerzahler");
+  expect("Betrag: in Euro", "Betrag: in Euro");                         // Formularbeschriftung bleibt
+  expect("Laufzeit: in Monaten", "Laufzeit: in Monaten");
+});
+
+test("gemischte Schreibweise: die kompakte Form belegt die mit Leerzeichen", () => {
+  expect("Maurer:innen und Maurer: innen", "Maurer und Maurer");
+  expect("Liebe Maurer: innen, die Maurer:innen der Firma", "Liebe Maurer, die Maurer der Firma");
+  expect("Maurer/Innen und Maurer*innen", "Maurer und Maurer");
+  expect("MaurerInnen und Maurer:innen", "Maurer und Maurer");          // auch Binnen-I
+  expect("Die Maurer:in kommt", "Der Maurer kommt");                    // Artikel passt sich an
+  expect("Maurer: innen", "Maurer: innen");                             // allein: kein Beleg
+});
+
+test("„innen und außen“ ist nie Gendering", () => {
+  expect("Leiter: innen und außen", "Leiter: innen und außen");         // Leiter steht im Lexikon
+  expect("Lehrer: innen & außen", "Lehrer: innen & außen");
+  withWikt({ fenster: wiktNoun("Fenster", "Fenster") }, () => {
+    expect("Fenster: innen/außen", "Fenster: innen/außen");
+  });
+});
+
+test("Adjektivendungen nur kompakt (keine Formeln/Aufzählungen)", () => {
+  expect("Beispiel: n = 5", "Beispiel: n = 5");
+  expect("Lösung: e = 2,718", "Lösung: e = 2,718");
+  expect("U = 2 * pi * r", "U = 2 * pi * r");
+  expect("Einheiten: Liter: l, Meter: m", "Einheiten: Liter: l, Meter: m");
+  expect("var_n", "var_n");
+  expect("jede/r", "jeder");
+  expect("eine·n", "einen");
+  expect("ein_e", "ein");
+});
+
+test("Slash-Form LehrerIn/Innen", () => {
+  expect("PatientIn/Innen", "Patienten");
+  expect("LehrerIn/Innen", "Lehrer");
+  expect("Lehrerin/innen", "Lehrerin/innen");                          // natürliche Femininform
+});
+
+test("umschließende Klammern bleiben erhalten", () => {
+  expect("(Lehrer:in)", "(Lehrer)");
+  expect("(Ärzt:innen)", "(Ärzte)");
+  expect("Kontakt (Ansprechpartner:in) anrufen", "Kontakt (Ansprechpartner) anrufen");
+  expect("[Mitarbeiter*innen]", "[Mitarbeiter]");
+  expect("(Die Kolleg:in)", "(Der Kollege)");
+  expect("Lehrer(:in)", "Lehrer");                                     // Klammer gehört zur Form
+  expect("Lehrer[*innen] und", "Lehrer und");
+});
+
+test("weitere Marker-Varianten", () => {
+  expect("Mitarbeiter" + MOD_COLON + "innen", "Mitarbeiter");
+  expect("Lehrer" + AST_OP + "innen", "Lehrer");
+  expect("Schüler/-innen", "Schüler");
+  expect("Ärzt:innen- und Patient:innenverbände", "Ärzte- und Patientenverbände");
+});
+
+// ─────────────────────────────────────────────────────────────
+// Unsichtbare Zeichen
+// ─────────────────────────────────────────────────────────────
+test("weiches Trennzeichen/Nullbreite im gegenderten Wort wird entfernt", () => {
+  expect("Lehrer" + SHY + ":innen", "Lehrer");
+  expect("Lehrer:" + ZWSP + "innen", "Lehrer");
+});
+
+test("unsichtbare Zeichen außerhalb gegenderter Wörter bleiben erhalten", () => {
+  const emoji = "\u{1F469}" + ZWJ + "\u{1F4BB}";                      // 👩‍💻
+  expect("Kolleg:innen " + emoji, "Kollegen " + emoji);
+  expect("Donau" + SHY + "dampf" + SHY + "schiff", "Donau" + SHY + "dampf" + SHY + "schiff");
+  const family = "Familie \u{1F468}" + ZWJ + "\u{1F469}" + ZWJ + "\u{1F467}";
+  assert.equal(normalizeGenderedText(family), family);                 // ohne Gendering: unverändert
+});
+
+// ─────────────────────────────────────────────────────────────
+// Kongruenz: Maskulinum nach (gegendertem) Determinativ, Artikelpaare
+// ─────────────────────────────────────────────────────────────
+test("Umlaut-Stämme nach maskulinem/gegendertem Determinativ → Maskulinum", () => {
+  expect("jede:r Ärzt:in", "jeder Arzt");
+  expect("ein:e Ärzt:in", "ein Arzt");
+  expect("eine:n Zahnärzt:in", "einen Zahnarzt");
+  expect("ein:e Französ:in", "ein Franzose");
+  expect("mit der Ärzt:in", "mit der Ärztin");                         // "der" auch feminin → bleibt
+  expect("eine Ärzt:in", "eine Ärztin");
+  expect("(jede:r Ärzt:in)", "(jeder Arzt)");                          // Klammer davor stört nicht
+  expect("„jeder mensch“", "„jeder mensch“");
+});
+
+test("Artikel-/Pronomenpaare → Maskulinum", () => {
+  expect("der*die Nutzer*in", "der Nutzer");
+  expect("die:der Mitarbeiter:in", "der Mitarbeiter");
+  expect("der*die Ärzt*in", "der Arzt");
+  expect("Sie/Er kommt", "Er kommt");
+  expect("seine:ihre Kolleg:innen", "seine Kollegen");
+  expect("der/die/das", "der/die/das");                                // Aufzählung bleibt
+  expect("er/sie/es", "er/sie/es");
+});
+
+test("mensch/frau nach Determinativ bleibt Substantiv", () => {
+  expect("jeder mensch hat rechte", "jeder mensch hat rechte");
+  expect("meine frau und ich", "meine frau und ich");
+  expect("als frau", "als frau");
+  expect("könnte mensch sagen", "könnte man sagen");
+});
+
+test("Genus-Kürzel-Varianten", () => {
+  expect("Entwickler (m/f/d)", "Entwickler");
+  expect("Engineer (all genders)", "Engineer");
+  expect("Stelle (w/m/d) in Berlin", "Stelle in Berlin");
+  expect("Geschwindigkeit (m/s)", "Geschwindigkeit (m/s)");
+});
+
+// ─────────────────────────────────────────────────────────────
+// Formen-Auflösung: Lexikon-Ergänzungen und Pluralregeln
+// ─────────────────────────────────────────────────────────────
+test("schwache Maskulina auf -e und weitere Lexikon-Einträge", () => {
+  expect("Kund:in", "Kunde");
+  expect("Kund:innen", "Kunden");
+  expect("Expert:in", "Experte");
+  expect("Gäst:innen", "Gäste");
+  expect("Chef:innen", "Chefs");
+  expect("Fan:innen", "Fans");
+  expect("Türk:innen", "Türken");
+  expect("Französ:innen", "Franzosen");
+  expect("Zeug:innen", "Zeugen");
+  expect("Augenzeug:innen", "Augenzeugen");
+  expect("SOZIALARBEITER:INNEN", "SOZIALARBEITER");
+});
+
+test("\"exact\"-Einträge sind kein Kompositum-Kopf", () => {
+  assert.equal(splitCompound("Fahrzeug"), null);
+  assert.equal(splitCompound("Werkzeug"), null);
+  for (const [key, val] of LEXICON) {
+    if (val.exact) assert.equal(splitCompound("Test" + key), null, key);
+  }
+});
+
+test("Pluralregeln: -eur/-ier/-ar/-är/-ling → -e, Fremdwörter → -en", () => {
+  const cases = {
+    Akteur: "Akteure", Regisseur: "Regisseure", Offizier: "Offiziere", Notar: "Notare",
+    Aktionär: "Aktionäre", Prüfling: "Prüflinge", Fotograf: "Fotografen",
+    Philosoph: "Philosophen", Ökonom: "Ökonomen", Oligarch: "Oligarchen", Theolog: "Theologen",
+    Lehrer: "Lehrer", Student: "Studenten", Autor: "Autoren", Bürge: "Bürgen",
+  };
+  for (const [stem, plural] of Object.entries(cases)) assert.equal(toPlural(stem), plural, stem);
+  assert.equal(toSingular("Theolog"), "Theologe");
+  assert.equal(toSingular("Lehrer"), "Lehrer");
+  expect("Regisseur:innen", "Regisseure");
+  expect("mit Akteur:innen", "mit Akteuren");
+  expect("Theolog:in", "Theologe");
+});
+
+// ─────────────────────────────────────────────────────────────
+// Wiktionary: Auswertung und gezielte Lookups
+// ─────────────────────────────────────────────────────────────
+const wikitext = (title, genus, sg, pl, extra = "") =>
+  `== ${title} ({{Sprache|Deutsch}}) ==\n=== {{Wortart|Substantiv|Deutsch}}, {{${genus}}} ===\n` +
+  `{{Deutsch Substantiv Übersicht\n|Genus=${genus}\n|Nominativ Singular=${sg}\n` +
+  `|Nominativ Plural=${pl}\n|Genitiv Singular=x\n}}\n${extra}`;
+
+test("parseWiktionaryFlexion: Formen und Personen-Signal", () => {
+  const person = parseWiktionaryFlexion(
+    wikitext("Mieter", "m", "Mieter", "Mieter", "{{Weibliche Wortformen}}\n:[1] [[Mieterin]]\n"));
+  assert.deepEqual(person, { sg: { nom: "Mieter" }, pl: { nom: "Mieter" }, person: true });
+
+  const noun = parseWiktionaryFlexion(wikitext("Termin", "m", "Termin", "Termine"));
+  assert.equal(noun.person, false);
+  assert.equal(noun.pl.nom, "Termine");
+
+  // "—" = Form existiert nicht → keine verwendbare Form
+  assert.equal(parseWiktionaryFlexion(wikitext("News", "f", "—", "News")).sg.nom, null);
+
+  // Mehrere deutsche Einträge: der Personen-Eintrag gewinnt ("Leiter" m vs. f)
+  const leiter = parseWiktionaryFlexion(
+    wikitext("Leiter", "f", "Leiter", "Leitern") +
+    wikitext("Leiter", "m", "Leiter", "Leiter", "{{Weibliche Wortformen}}\n:[1] [[Leiterin]]\n"));
+  assert.equal(leiter.pl.nom, "Leiter");
+
+  // Nur deutsche Abschnitte zählen
+  const english = "== chef ({{Sprache|Englisch}}) ==\n{{Weibliche Wortformen}}\n";
+  assert.equal(parseWiktionaryFlexion(english), null);
+});
+
+test("Wiktionary-Personenbeleg: Binnen-I nur bei Person, nicht bei jedem Substantiv", () => {
+  expect("CheckIn", "CheckIn");
+  withWikt({ check: wiktNoun("Check", "Checks"), mieter: wiktPerson("Mieter", "Mieter") }, () => {
+    expect("CheckIn", "CheckIn");                                      // Substantiv ≠ Person
+    expect("MieterInnen", "Mieter");
+  });
+});
+
+test("collectLookupStems fragt nur, was lokal nicht lösbar ist", () => {
+  const stems = text => [...collectLookupStems(text, new Set())].sort();
+  assert.deepEqual(stems("Liebe Kolleg:innen und Lehrer:innen"), []);   // LEXICON
+  assert.deepEqual(stems("Die Mieter:innen"), []);                      // -er: Regel genügt
+  assert.deepEqual(stems("Sozialarbeiter:innen"), []);                  // Kompositum
+  assert.deepEqual(stems("Termin: in Kürze"), []);                      // strukturell ausgeschlossen
+  assert.deepEqual(stems("Die Bischof:innen"), ["bischof"]);            // Plural unsicher
+  assert.deepEqual(stems("MaurerInnen"), ["maurer"]);                   // Personenbeleg nötig
+  assert.deepEqual(stems("Farbe: innen weiß"), ["farbe"]);
+  assert.deepEqual(stems("Maurer:innen und Maurer: innen"), []);        // im Text belegt
+  assert.deepEqual(stems("Bischof:innen und Bischof: innen"), ["bischof"]); // Plural fehlt trotzdem
+});
+
+// ─────────────────────────────────────────────────────────────
+// Vorfilter
+// ─────────────────────────────────────────────────────────────
+test("Vorfilter lässt gewöhnlichen Text durch", () => {
+  for (const s of ["Er kommt aus Berlin.", "Das ist mein Termin.", "Die Frau lacht.",
+                   "Ein Mensch.", "Wir sehen uns in fünf Minuten."]) {
+    assert.equal(hasGenderCandidate(s), false, s);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
 // Strukturelle Invarianten
 // ─────────────────────────────────────────────────────────────
 test("LEXICON-Schlüssel sind kleingeschrieben und Werte vollständig", () => {
   for (const [key, val] of LEXICON) {
     assert.equal(key, key.toLowerCase(), `Schlüssel nicht kleingeschrieben: ${key}`);
     assert.ok(val.sg && val.pl, `sg/pl fehlt für: ${key}`);
+    if ("m" in val) assert.ok(/in$/.test(val.sg), `m nur bei femininem sg: ${key}`);
   }
 });
 
@@ -389,4 +703,24 @@ test("PARTICIPLE-Schlüssel sind kleingeschrieben, enden auf -nd und haben m/pl"
     assert.ok(val.m && val.pl, `m/pl fehlt für: ${key}`);
     assert.ok("f" in val, `f-Feld fehlt für: ${key}`); // darf null sein, muss aber existieren
   }
+});
+
+// Der Vorfilter prüft nur billige notwendige Bedingungen. Würde er eine Eingabe
+// abweisen, die ein Muster tatsächlich verändert, bliebe diese Form im Browser stehen.
+test("Vorfilter übersieht nichts (alle Testeingaben)", () => {
+  assert.ok(seenInputs.length > 100);
+  for (const input of seenInputs) {
+    if (applyPatterns(input, true) !== input) {
+      assert.ok(hasGenderCandidate(input), `Vorfilter übersieht: ${JSON.stringify(input)}`);
+    }
+  }
+});
+
+// Das Manifest ist die einzige Versionsquelle für Popup und Content-Script;
+// package.json muss mitziehen.
+test("Versionen von manifest.json und package.json stimmen überein", () => {
+  const read = file => JSON.parse(fs.readFileSync(path.join(__dirname, "..", file), "utf8"));
+  assert.equal(read("package.json").version, read("manifest.json").version);
+  const popup = fs.readFileSync(path.join(__dirname, "..", "popup.html"), "utf8");
+  assert.ok(!/v\d+\.\d+\.\d+/.test(popup), "popup.html soll keine feste Version enthalten");
 });

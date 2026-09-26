@@ -1,10 +1,13 @@
 "use strict";
 
 // ── Zustand ───────────────────────────────────────────────────
-const DEFAULT = { enabled: true, blockedDomains: [], participles: true };
+const DEFAULT = { enabled: true, blockedDomains: [], participles: true, wiktionary: true };
 let cfg = { ...DEFAULT };
 let tabHost = null;
 let toastTimer = null;
+
+// Einzige Versionsquelle ist das Manifest.
+document.getElementById("version").textContent = "v" + browser.runtime.getManifest().version;
 
 // ── Toast ─────────────────────────────────────────────────────
 function showToast(msg, type = "ok", duration = 2500) {
@@ -43,6 +46,7 @@ function saveConfig(patch, feedbackMsg) {
     render();
   }).catch(() => {
     showToast("Fehler beim Speichern.", "err");
+    loadConfig();   // Anzeige wieder auf den tatsächlich gespeicherten Stand bringen
   });
 }
 
@@ -56,12 +60,13 @@ function render() {
   badge.className  = "status-badge " + (cfg.enabled ? "on" : "off");
   text.textContent = cfg.enabled ? "Aktiv" : "Deaktiviert";
 
-  // Partizip-Formen-Toggle (Default an, falls nicht gesetzt)
+  // Partizip- und Wiktionary-Toggle (Default an, falls nicht gesetzt)
   document.getElementById("participlesToggle").checked = cfg.participles !== false;
+  document.getElementById("wiktionaryToggle").checked  = cfg.wiktionary !== false;
 
   // Domain-Liste
   const list = document.getElementById("domainList");
-  list.innerHTML = "";
+  list.replaceChildren();
 
   if (cfg.blockedDomains.length === 0) {
     const li = document.createElement("li");
@@ -80,6 +85,7 @@ function render() {
       btn.className   = "domain-delete";
       btn.textContent = "×";
       btn.title       = d + " entfernen";
+      btn.setAttribute("aria-label", d + " entfernen");
       btn.dataset.index = String(i);
 
       li.append(span, btn);
@@ -98,28 +104,34 @@ document.getElementById("domainList").addEventListener("click", e => {
   removeDomain(i);
 });
 
+// Als <button>, damit die Aktion auch per Tastatur erreichbar ist.
+function linkButton(label, onClick) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "link-btn";
+  btn.textContent = label;
+  btn.addEventListener("click", onClick);
+  return btn;
+}
+
 function updateCurrentHint() {
   const hint = document.getElementById("currentHint");
-  hint.innerHTML = "";
+  hint.replaceChildren();
   if (!tabHost) return;
 
   if (cfg.blockedDomains.includes(tabHost)) {
-    const msg  = document.createTextNode(tabHost + " ist ausgeschlossen. ");
-    const link = document.createElement("a");
-    link.textContent = "Entfernen?";
-    link.id = "removeCurrentLink";
-    hint.append(msg, link);
-    link.addEventListener("click", () => {
-      const i = cfg.blockedDomains.indexOf(tabHost);
-      if (i !== -1) removeDomain(i, tabHost + " wieder erlaubt.");
-    });
+    hint.append(
+      tabHost + " ist ausgeschlossen. ",
+      linkButton("Entfernen?", () => {
+        const i = cfg.blockedDomains.indexOf(tabHost);
+        if (i !== -1) removeDomain(i, tabHost + " wieder erlaubt.");
+      })
+    );
   } else {
-    const msg  = document.createTextNode("Aktuelle Seite: ");
-    const link = document.createElement("a");
-    link.textContent = tabHost + " ausschließen →";
-    link.id = "addCurrentLink";
-    hint.append(msg, link);
-    link.addEventListener("click", () => addDomain(tabHost));
+    hint.append(
+      "Aktuelle Seite: ",
+      linkButton(tabHost + " ausschließen →", () => addDomain(tabHost))
+    );
   }
 }
 
@@ -167,6 +179,15 @@ document.getElementById("participlesToggle").addEventListener("change", e => {
   );
 });
 
+document.getElementById("wiktionaryToggle").addEventListener("change", e => {
+  saveConfig(
+    { wiktionary: e.target.checked },
+    e.target.checked
+      ? "✓ Seltene Wörter werden bei Wiktionary nachgeschlagen."
+      : "Keine Anfragen mehr an Wiktionary (nur eingebautes Lexikon)."
+  );
+});
+
 document.getElementById("addBtn").addEventListener("click", () => {
   addDomain(document.getElementById("domainInput").value);
 });
@@ -188,7 +209,7 @@ document.getElementById("debugToggle").addEventListener("change", e => {
         : "Debug-Modus deaktiviert.",
       "info", 3000
     );
-  });
+  }).catch(() => showToast("Fehler beim Speichern.", "err"));
 });
 
 // Klick auf die ganze Debug-Zeile toggelt den Schalter
@@ -200,9 +221,12 @@ document.getElementById("debugRow").addEventListener("click", e => {
 });
 
 // ── Tab-Host ermitteln ────────────────────────────────────────
+// Die URL des aktiven Tabs liefert die "activeTab"-Berechtigung, die Firefox beim
+// Öffnen des Popups vergibt. Fehlt sie (z. B. als Optionsseite geöffnet), bleibt der
+// Hinweis einfach leer.
 browser.tabs.query({ active: true, currentWindow: true }).then(tabs => {
   const url = tabs[0]?.url;
-  if (!url || url.startsWith("about:") || url.startsWith("moz-")) return;
+  if (!url || !/^https?:/.test(url)) return;
   tabHost = new URL(url).hostname.replace(/^www\./, "");
   updateCurrentHint();
 }).catch(() => {});

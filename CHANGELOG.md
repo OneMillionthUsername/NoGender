@@ -1,4 +1,55 @@
 # Changelog
+## 3.0.0 (2026-09-26)
+
+Umfassende Überarbeitung nach einem Projekt-Review: Falschtreffer in normalem Text und in Code-Blöcken, gemischte Schreibweisen mit und ohne Leerzeichen, Datenschutz und Drosselung des Wiktionary-Lookups, Performance. Wegen des Umfangs ein Major-Sprung.
+
+### Fehlerbehebungen
+- **Marker mit Leerzeichen trafen normalen Text**: Seit 1.7.2 galt auch „Mieter: innen" als Gendering – und damit jede Doppelpunkt-Aufzählung mit „in"/„innen" dahinter: „Termin: in zwei Wochen" → „Termin zwei Wochen", „Farbe: innen weiß" → „Farben weiß", „Startseite · in eigener Sache" → „Startseite eigener Sache", „Tür (innen)" → „Türen". Im Wikipedia-Artikel „Deutschland" wurde aus „ausgeübt: In Zivil- und Strafsachen" „ausgeübt Zivil- und Strafsachen". Formen mit Leerzeichen am Marker werden jetzt nur noch bei sicher belegter Personenbezeichnung ersetzt (LEXICON oder Wiktionary), nur kleingeschrieben und im Singular nicht vor einem weiteren Wort („Lehrer: in der Schule" bleibt). Gegenderte Komposita („Lehrer*innenzimmer") werden nur noch kompakt erkannt („Bauer: Innenpolitisch …" bleibt).
+- **Großes „I" nach „/" (todo: „Amoralismus/Intellekt")**: Endete ein Textknoten mitten im Wort („(Amoralismus/In" + `<em>tellekt</em>`) oder war das Wort getrennt („In- tellekt"), wurde „/In" als Gender-Endung entfernt. Nach „/" beginnt mit großem „I" oft ein neues Wort („Außen/Innen"); dort – und bei „:In" vor einem Wort („Hinweis:In diesem Fall", fehlendes Leerzeichen) – wird jetzt nur bei Personenbezeichnungen aufgelöst. Direkt am Marker gilt großes „I" sonst weiter als eindeutige Gender-Schreibung („Maurer*Innen" → „Maurer", auch ohne Lexikon).
+- **Adjektivendungen in Formeln und Aufzählungen**: `:n`, `:e`, `:r` und `er:m` erlaubten Leerzeichen und beliebige Stämme – „Beispiel: n = 5" → „Beispieln = 5", „2 * pi * r" → „2 * pir", „Meter: m" → „Metem", „var_n" → „varn". Jetzt nur kompakt; bei `:n`/`:r` muss der Stamm auf -e enden (jede:r, eine:n).
+- **Code-Blöcke wurden verändert**: Ausgenommen war nur Text, dessen *direktes* Elternelement `code`/`pre` ist. Syntax-Highlighting (`<pre><code><span>jede:r</span>`) und Text, den der MutationObserver meldet (nachträglich gestreamter Code in KI-Chats), wurden deshalb normalisiert. Der Ausschluss gilt jetzt für alle Nachfahren von `pre`, `code`, `kbd`, `samp`, `script`, `style` usw. – im Erstdurchlauf und im Observer.
+- **Klammern verschwanden**: Eine gegenderte Form direkt vor „)" oder „]" nahm die Klammer mit – „Kontakt (Ansprechpartner:in) anrufen" → „Kontakt (Ansprechpartner anrufen", „(Ärzt:innen)" → „(Ärzte". Die schließende Klammer gehört jetzt nur noch zur Form, wenn direkt vor dem Marker eine öffnende steht („Lehrer(:in)").
+- **Slash-Form „PatientIn/Innen"**: Dem Muster fehlte das `u`-Flag, `\p{L}` griff nie, und ein anderes Muster machte „PatientInen" daraus. Jetzt → „Patienten". Die natürliche Femininform „Lehrerin/innen" bleibt stehen (vorher „Lehrerinen").
+- **Unsichtbare Zeichen**: Weiche Trennstriche und Nullbreiten-Zeichen wurden aus dem *ganzen* Text entfernt – auch ohne Gendering (Attribute, Titel und JSON-LD wurden grundlos umgeschrieben) und inklusive U+200D, das Emoji-Sequenzen zusammenhält („👩‍💻" zerfiel). Jetzt nur noch in Wörtern, die danach gegendert aussehen.
+- **Genus nach Determinativ**: „jede:r Ärzt:in" → „jeder Ärztin", „ein:e Ärzt:in" → „ein Ärztin". Nach maskulinem oder gegendertem Determinativ wird jetzt das Maskulinum gewählt („jeder Arzt"); „mit der Ärzt:in" bleibt „mit der Ärztin".
+- **Versal-Komposita**: „MITARBEITER:INNEN" → „MITarbeiter". Ein exakter LEXICON-Treffer geht jetzt vor die Kompositum-Zerlegung, und in Versalwörtern bleibt der Kopf groß.
+- **„mensch"/„frau" nach Determinativ**: In klein geschriebenen Texten wurde „jeder mensch" zu „jeder man" und „meine frau" zu „meine man". Nach Artikel, Possessivum oder „als" bleibt das Substantiv jetzt stehen.
+- **Pluralregeln**: „Akteur:innen" → „Akteuren", „Notar:innen" → „Notaren", „Aktionär:innen" → „Aktionären" (Dativ- statt Nominativform); „Offizier", „Fotograf", „Philosoph", „Ökonom", „Oligarch", „Theolog" blieben ohne Plural. Neu: -eur/-ier/-ar/-är/-ling → -e; -graf/-soph/-nom/-arch/-log/-gog/-ik → -en; Singular „Theolog:in" → „Theologe".
+- **Wiktionary-Auswertung**: „—" (Form existiert nicht, z. B. Singular von „News") wurde als Wort eingesetzt. Der deutsche Abschnitt wurde nie erkannt (falsches Überschriftenformat); jetzt werden die deutschen Einträge getrennt und bei mehreren („Leiter" als Person bzw. Steiggerät) der Personen-Eintrag bevorzugt.
+- **Veralteter Text nach dem Lookup**: Änderte die Seite einen Text, während dessen Wiktionary-Anfrage lief (React-Rerender), schrieb NoGender danach die normalisierte *alte* Fassung zurück. Jetzt wird nur geschrieben, wenn der Text unverändert ist.
+- **Änderungen während des Erstdurchlaufs**: Der MutationObserver startete erst nach dem kompletten, wegen Wiktionary teils sekundenlangen Erstdurchlauf; was die Seite in der Zeit änderte, blieb unbearbeitet. Er startet jetzt zuerst. Auch Shadow-DOM-Bereiche erhalten einen Observer.
+- **JSON-LD**: wurde bei jedem Durchlauf kompaktiert neu geschrieben, auch ohne Ersetzung (und löste den Head-Observer erneut aus). Jetzt nur bei tatsächlicher Änderung; der Head-Observer ist gebündelt.
+
+### Datenschutz
+- **Wiktionary ohne Cookies und Referer** (`credentials: "omit"`, `referrerPolicy: "no-referrer"`): Bisher konnte der Referer die besuchte Website mitschicken.
+- **Cache im Erweiterungsspeicher statt im sessionStorage der Webseite**: Der Cache lag im Speicher der jeweiligen Website, war dort für deren Skripte lesbar und verriet die Erweiterung samt nachgeschlagener Wörter. Jetzt in `browser.storage.local` (ein Schlüssel je Wort, 30 Tage gültig, seitenübergreifend) – weniger Anfragen, für Websites unsichtbar. Der alte Eintrag wird entfernt.
+- **Weniger Anfragen**: Nachgeschlagen wird nur, was lokal nicht lösbar ist – nicht mehr bei Komposita mit Lexikon-Kopf, sicher geregelten Endungen („Mieter:innen") oder strukturell ausgeschlossenen Treffern („Termin: in Kürze").
+- **Wiktionary-Lookup abschaltbar**: neuer Schalter im Popup (Standard: an). README und Manifest nannten den Lookup schon „optional" – jetzt ist er es.
+- **`activeTab` statt `tabs`**: Das Popup braucht nur die URL des aktiven Tabs, und zwar nur, solange es offen ist. Die weitreichende Berechtigung zum Lesen aller Tabs (Installationswarnung „Auf Browsertabs zugreifen") entfällt.
+
+### Rücksicht auf Wiktionary und Nutzer
+- **Drosselung**: höchstens zwei gleichzeitige Anfragen; nach HTTP 429/5xx eine Minute Pause. Fehlgeschlagene Anfragen werden nicht mehr als „unbekannt" gecacht (vorher blieb ein Wort nach einem Timeout für die Sitzung unauflösbar). Antworten sind über `maxage` cachebar.
+- **Kein Reload fremder Tabs**: Das Ausschalten lud bisher *alle* offenen Tabs neu – ungespeicherte Eingaben in anderen Tabs gingen verloren. Jetzt nur noch sichtbare Tabs; Hintergrund-Tabs hören sofort auf, Text zu ändern. Das Einschalten kommt ganz ohne Reload aus.
+
+### Performance
+- **Vorfilter**: Das kombinierte Vorfilter-Regex schlug durch das `i`-Flag auf die Binnen-I-Muster bei praktisch jedem deutschen Text an („ein", „Berlin", „Frau") und war selbst teuer (≈ 260 ms für 175 000 Zeichen). Ersetzt durch billige notwendige Bedingungen (`hasGenderCandidate`); die Muster ankern am Wortanfang. Am Wikipedia-Artikel „Deutschland" (≈ 29 000 Textknoten): 6–10 s → ≈ 0,45 s.
+- **Gebündelte Lookups**: Stämme werden pro Block von 150 Textknoten gesammelt und gemeinsam geladen, statt Knoten für Knoten auf die eigene Anfrage zu warten.
+
+### Neue Funktionen
+- **Gemischte Schreibweise**: Kommt ein Wort irgendwo auf der Seite kompakt gegendert vor („Maurer:innen"), gilt es auch in den mehrdeutigen Schreibweisen als Person – „Liebe Maurer: innen" weiter oben, „Maurer/Innen" oder „MaurerInnen" werden dann ohne Lexikon und ohne Wiktionary aufgelöst. Ein Vorab-Scan sammelt diese Belege, bevor Text ersetzt wird; nachgeladene Inhalte ergänzen sie. „innen und außen" (auch „innen & außen", „innen/außen") gilt nie als Gendering.
+- **Leerzeichen-Formen in Komposita** (Anlass: Beschwerde über eine Bank-Website mit „Kund: innen", „Investor: innen", „Sparer: innen"): Ist der Kopf allein kein Wort („Privatkund: innen", „Fachärzt: innen"), ist die Form eindeutig. Mit eigenständigem Kopf („Kundenberater: innen", „Kontoinhaber: innen") gilt sie, sobald der Text bzw. die Seite nachweislich gendert – ein alleinstehendes „Lautsprecher: innen" bleibt stehen. Formularbeschriftungen wie „Betrag: in Euro" bleiben immer unverändert.
+- **Artikel-/Pronomenpaare**: „der*die Nutzer*in" → „der Nutzer", „die/der" → „der", „sie/er" → „er", „seine:ihre" → „seine" (nur kompakt; „der/die/das" bleibt).
+- **Genus-Kürzel**: zusätzlich „(m/f/d)", „(w/m/x)", „(div)", „(all genders)", „(alle Geschlechter)", „(gn)".
+- **Weitere Marker**: ∗ ⁎ ꞉ ∶ (typografische Varianten von Stern und Doppelpunkt).
+- **Lexikon**: Programmierer, Dienstleister, Kunde, Experte, Genosse, Zeuge/Augenzeuge, Gast („Gäst:innen"), Türke, Grieche, Tscheche, Slowake, Franzose, Jude, Chef, Fan, Hotelier, Bankier, Kapitän, Akteur, Präsident, Leiter, Meister, Minister, Kanzler, Vertreter, Anwohner, -nehmer, -geber, Täter, Sportler, Erzieher, Käufer, Hersteller, Betreuer, Zuschauer, Zuhörer, Kämpfer, Designer, Manager, Mieter, Inhaber, Anleger, Investor, Sparer, Empfänger, Zahler, Rentner, Schuldner, Gläubiger, Vermittler, Makler, Azubi. Neue optionale Felder: `m` (Maskulinum bei femininem `sg`) und `exact` (kein Kompositum-Kopf – „zeug" wegen „Fahrzeug").
+- **Popup**: Version aus dem Manifest; Barrierefreiheit (Beschriftungen für alle Schalter, sichtbarer Tastaturfokus, Buttons statt Links ohne Ziel, Statusmeldungen per `aria-live`).
+
+### Wartung
+- **Eine Versionsquelle**: Popup und Content-Script lesen die Version aus dem Manifest; ein Test prüft den Gleichlauf von `manifest.json` und `package.json`.
+- **Tests**: 28 neue Testfälle (78 insgesamt), darunter die Invariante „Vorfilter übersieht nichts" über alle Testeingaben.
+
+---
+
 ## 2.1.0 (2026-06-14)
 
 Marker-freies Gendering wird zurückgebaut: Pseudo-Feminina (Phase 1) und substantivierte Partizipien (Phase 2). Wegen des neuen Funktionsumfangs ein Minor-Sprung.

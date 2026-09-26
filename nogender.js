@@ -15,14 +15,18 @@
 //
 // ── KONFIGURATION & START ──────────────────────────────────────────────────
 //   isBlockedDomain    Prüft, ob die Domain auf der Ausschlussliste steht.
-//   init               Einstiegspunkt: verarbeitet die Seite und startet die Observer.
+//   start / stop       Schaltet die Verarbeitung ein bzw. trennt alle Observer.
+//   init               Verarbeitet die Seite und startet die Observer.
 //
 // ── WIKTIONARY (Nachschlagewerk für seltene Wörter) ────────────────────────
-//   fetchWiktionaryForms   Lädt Beugungsformen eines Worts von de.wiktionary.org (mit Cache).
-//   parseWiktionaryFlexion Extrahiert Singular/Plural aus dem Wiktionary-Rohtext.
+//   fetchWiktionaryForms   Lädt Beugungsformen eines Worts von de.wiktionary.org
+//                          (gedrosselt, ohne Cookies und Referer).
+//   parseWiktionaryFlexion Extrahiert Singular/Plural und das Personen-Signal aus dem Wikitext.
+//   loadWiktFromStore /    Cache in browser.storage.local (ein Schlüssel je Wort, 30 Tage);
+//     saveWiktLater          für Webseiten unsichtbar, über Tabs und Sitzungen hinweg gültig.
 //   getWikt                Liest aus dem Cache (ohne Netzwerkzugriff).
-//   persistWiktCache /     Sichert den Cache gebündelt im sessionStorage.
-//     schedulePersist
+//   collectLookupStems /   Sammelt Stämme, die sich nicht lokal auflösen lassen, und lädt
+//     prefetchLookups        sie gebündelt vor der Verarbeitung eines Textblocks.
 //
 // ── WÖRTERBUCH & FORMEN (Auflösung in natürliche Formen) ───────────────────
 //   LEXICON            Kuratierte, autoritative Liste häufiger/unregelmäßiger Personenwörter.
@@ -30,24 +34,29 @@
 //   PARTICIPLE         Kuratierte Partizip-Substantive ("Studierende") → echtes Nomen (Allowlist).
 //   resolveParticiple  Bestimmt Numerus/Genus aus Determinativ + Endung (konservativ, nur Nominativ-Sg.).
 //   resolveForm        Wählt die Form: erst LEXICON, dann Wiktionary, dann regelbasiert.
-//   toPlural           Regelbasierte Pluralbildung als Fallback.
+//   toPlural /         Regelbasierte Plural-/Singularbildung als Fallback.
+//     toSingular
 //   toDativPlural      Bildet den Dativ Plural ("Lehrer" → "Lehrern").
 //   preserveCase       Überträgt die Groß-/Kleinschreibung des Originals auf das Ergebnis.
 //   splitCompound      Zerlegt Komposita ("Sozialarbeiter" → "Sozial" + "arbeiter").
 //   isLikelyPersonStem Prüft, ob ein Stamm eine Personenbezeichnung ist (schützt vor Fehlgriffen).
 //   replaceStem        Setzt Stamm und aufgelöste Form zusammen.
 //   isDativContext     Prüft den linken Kontext auf eindeutige Dativ-Auslöser ("mit"/"nach"/"den" …).
+//   isMascContext      Prüft, ob ein maskulines/gegendertes Determinativ vor einer Singularform steht.
 //
 // ── ERKENNUNGS-MUSTER (Regex) ──────────────────────────────────────────────
 //   MARKER / STEM      Bausteine: Trennzeichen ( : * · _ / … ) und Wortstamm.
 //   reInnenWithMarker  Plural mit Marker: "Lehrer:innen", "Lehrer*innen"  → Stamm + Zeichen + "innen".
 //   reInWithMarker     Singular mit Marker: "Ärzt:in"                      → Stamm + Zeichen + "in".
+//   markerFormKind     Bewertet Leerzeichen/großes "I" an einer Marker-Form ("Termin: in Kürze"
+//                      ist normales Deutsch, "Lehrer:innen" eindeutig Gendering).
 //   reInnenParen /     Klammerform: "Lehrer(innen)" / "Bürger(in)".
 //     reInParen
 //   reBinnenIPlural /  Binnen-I (großes I mitten im Wort): "LehrerInnen" / "BürgerIn".
 //     reBinnenISingular
 //   reInSlashInnen     Slash-Form: "LehrerIn/Innen".
 //   reInnenCompound    Gegendertes Kompositum: "Lehrer:innenzimmer" → "Lehrerzimmer".
+//   reArticlePair      Artikel-/Pronomenpaare: "der*die" → "der", "sie/er" → "er".
 //   reAdjNWithMarker / Adjektiv-/Pronomenendungen: "eine:n"→"einen", "ein:e"→"ein",
 //     reAdjEWithMarker   "jede:r"→"jeder".
 //     reAdjRWithMarker
@@ -60,14 +69,15 @@
 //   reArtSingularNom   Artikel-Kongruenz am Satzanfang: "Die Kolleg:in" → "Der Kollege".
 //   reStandalone*Marker Ein Marker, der allein in einem Textknoten steht (für über
 //                      mehrere HTML-Tags verteilte Formen).
-//   reAnyGenderPattern Vorfilter: prüft, ob überhaupt Gendering vorkommt (vermeidet unnötige Arbeit).
+//   hasGenderCandidate Vorfilter: billige notwendige Bedingungen aller Muster (vermeidet unnötige Arbeit).
 //
 // ── KERN-UMWANDLUNG ────────────────────────────────────────────────────────
-//   normalizeGenderedText      Wendet alle Muster nacheinander auf einen Text an (synchron, ohne Netz).
-//   normalizeGenderedTextAsync Wie oben, lädt aber vorab fehlende Wörter von Wiktionary nach.
+//   normalizeGenderedText Vorfilter + applyPatterns (synchron, ohne Netz).
+//   applyPatterns         Wendet alle Muster nacheinander auf einen Text an.
 //
 // ── DOM-VERARBEITUNG ───────────────────────────────────────────────────────
-//   isEditableNode           Schließt Eingabefelder aus (input/textarea/contenteditable).
+//   isEditableNode /         Schließen Eingabefelder (input/textarea/contenteditable) und
+//     acceptTextNode           Code (pre/code/kbd/samp, auch verschachtelt) aus.
 //   processBatch /           Verarbeitet die sichtbaren Textknoten blockweise.
 //     replaceGenderedLanguageInDOM
 //   normalizeSplitMarkers*   Behandelt Formen, die HTML über mehrere Tags verteilt
@@ -76,7 +86,7 @@
 //   normalizeDocumentTitle / normalizeMetaTags           Seitentitel & <meta>-Tags.
 //   normalizeJsonLd*         Strukturierte Daten (JSON-LD) im <script>.
 //   normalizeSvgText         Text innerhalb von SVG-Grafiken.
-//   normalizeShadowDom       Web-Component-Bereiche (Shadow DOM).
+//   normalizeShadowDom       Web-Component-Bereiche (Shadow DOM), inkl. Observer.
 //
 // ── OBSERVER (für dynamische Seiten) ───────────────────────────────────────
 //   observeGenderedLanguage  Reagiert auf nachträglich eingefügten/geänderten Inhalt (SPAs).
@@ -89,18 +99,26 @@
   // 0. KONFIGURATION – aus browser.storage.local laden
   // ─────────────────────────────────────────────────────────────
 
-  const VERSION    = "2.1.0";
-  const CACHE_KEY  = "nogender_wikt_cache";
-
   const DEFAULT_CONFIG = {
     enabled: true,
     blockedDomains: [],
     participles: true,   // Partizip-Substantive (Studierende → Studenten) zurückbauen
+    wiktionary: true,    // unbekannte Wörter bei de.wiktionary.org nachschlagen
   };
 
   let debugEnabled       = false;
-  let wasActive          = false;
+  let active             = false;  // verarbeitet dieses Dokument gerade Text?
   let participlesEnabled = true;   // aus cfg.participles gesetzt; steuert den Partizip-Pass
+  let wiktionaryEnabled  = true;   // aus cfg.wiktionary gesetzt; steuert den Online-Lookup
+
+  // Browser-APIs nur im Extension-Kontext ansprechen. Unter Node (Tests) fehlt
+  // `browser`; die reinen Funktionen werden dann am Dateiende exportiert.
+  const HAS_BROWSER = typeof browser !== "undefined" && !!browser.storage;
+
+  // Einzige Versionsquelle ist das Manifest (Popup und Debug-Log lesen es aus).
+  const VERSION = HAS_BROWSER && browser.runtime?.getManifest
+    ? browser.runtime.getManifest().version
+    : "dev";
 
   function isBlockedDomain(cfg) {
     const host = location.hostname.replace(/^www\./, "");
@@ -115,11 +133,11 @@
     } catch {}
   };
 
-  // Browser-APIs nur im Extension-Kontext ansprechen. Unter Node (Tests) fehlt
-  // `browser`; die reinen Funktionen werden dann am Dateiende exportiert.
-  const HAS_BROWSER = typeof browser !== "undefined" && !!browser.storage;
-
   if (HAS_BROWSER) {
+    // Bis v2.1 lag der Wiktionary-Cache im sessionStorage der Seite – dort war er für
+    // die Webseite lesbar. Altlast einmalig entfernen.
+    try { sessionStorage.removeItem("nogender_wikt_cache"); } catch {}
+
     browser.storage.local.get("nogender_debug").then(r => {
       debugEnabled = !!r.nogender_debug;
     }).catch(() => {});
@@ -134,20 +152,26 @@
 
       if (!changes.nogender_config) return;
       const newCfg = { ...DEFAULT_CONFIG, ...(changes.nogender_config.newValue ?? {}) };
-      // Auch ein Umschalten des Partizip-Features erfordert einen Reload, damit der
-      // Seitentext neu (bzw. im Original) gerendert wird.
+      wiktionaryEnabled = newCfg.wiktionary !== false;   // wirkt sofort, ohne Reload
       const participlesChanged = (newCfg.participles !== false) !== participlesEnabled;
       participlesEnabled = newCfg.participles !== false;
       const willBeActive = newCfg.enabled && !isBlockedDomain(newCfg);
-      if (participlesChanged && willBeActive && wasActive) {
-        location.reload();
+
+      // Einschalten braucht keinen Reload – die Seite wird direkt verarbeitet.
+      if (willBeActive && !active) {
+        start();
         return;
       }
-      // Reload bei Toggle in beide Richtungen (aktiv↔inaktiv), damit die Seite
-      // beim Deaktivieren in den Original-Zustand zurückkehrt und beim
-      // Aktivieren die Erweiterung überhaupt greift. Änderungen an anderen
-      // Domains der Blockliste lösen keinen Reload aus.
-      if (willBeActive !== wasActive) {
+      // Ausschalten: sofort nichts mehr verändern. Nur SICHTBARE Seiten neu laden, damit
+      // der Originaltext zurückkehrt. Hintergrund-Tabs werden nicht ungefragt neu geladen
+      // (sie könnten ungespeicherte Eingaben enthalten); dort gilt das beim nächsten Laden.
+      if (!willBeActive && active) {
+        stop();
+        if (!document.hidden) location.reload();
+        return;
+      }
+      // Umschalten des Partizip-Features: sichtbare Seite neu (bzw. im Original) rendern.
+      if (participlesChanged && active && !document.hidden) {
         location.reload();
       }
     });
@@ -156,18 +180,17 @@
     browser.storage.local.get("nogender_config").then(result => {
       const cfg = { ...DEFAULT_CONFIG, ...(result.nogender_config ?? {}) };
       participlesEnabled = cfg.participles !== false;
+      wiktionaryEnabled  = cfg.wiktionary !== false;
 
       if (!cfg.enabled || isBlockedDomain(cfg)) {
         debug("Deaktiviert oder geblockt:", location.hostname);
         return;
       }
 
-      wasActive = true;
-      init();
+      start();
     }).catch(() => {
       // Fallback: starten ohne Config
-      wasActive = true;
-      init();
+      start();
     });
   }
 
@@ -175,119 +198,193 @@
   // 1. WIKTIONARY-LOOKUP & CACHE
   // ─────────────────────────────────────────────────────────────
 
-  const wiktCache = (() => {
-    try {
-      const raw = sessionStorage.getItem(CACHE_KEY);
-      return raw ? new Map(JSON.parse(raw)) : new Map();
-    } catch { return new Map(); }
-  })();
+  // Zwei Cache-Ebenen: `wiktCache` im Speicher (pro Seite) und browser.storage.local
+  // mit einem Schlüssel je Wort. Einzelne Schlüssel statt einer großen Map, weil
+  // storage.onChanged jede Änderung an alle Tabs verteilt – so bleibt das billig.
+  const WIKT_PREFIX      = "nogender_wikt:";
+  const WIKT_TTL_MS      = 30 * 24 * 60 * 60 * 1000;
+  const WIKT_PARALLEL    = 2;           // API-Etikette: nur wenige gleichzeitige Anfragen
+  const WIKT_COOLDOWN_MS = 60 * 1000;   // Pause nach Drosselung (HTTP 429) oder Serverfehler
 
-  function persistWiktCache() {
+  const wiktCache    = new Map();   // Stamm (klein) → Formen | null (= definitiv unbekannt)
+  const wiktInFlight = new Map();   // dedupliziert parallele Anfragen für dasselbe Wort
+  const wiktQueue    = [];
+  const wiktUnsaved  = {};
+  let wiktRunning     = 0;
+  let wiktPausedUntil = 0;
+  let wiktSaveTimer   = null;
+
+  function flushWiktSaves() {
+    if (wiktSaveTimer) { clearTimeout(wiktSaveTimer); wiktSaveTimer = null; }
+    const batch = { ...wiktUnsaved };
+    for (const k in wiktUnsaved) delete wiktUnsaved[k];
+    if (Object.keys(batch).length) browser.storage.local.set(batch).catch(() => {});
+  }
+
+  // Neue Einträge gebündelt schreiben (ein storage-Aufruf pro Sekunde statt pro Wort).
+  function saveWiktLater(key, forms) {
+    if (!HAS_BROWSER) return;
+    wiktUnsaved[WIKT_PREFIX + key] = { f: forms, t: Date.now() };
+    if (!wiktSaveTimer) wiktSaveTimer = setTimeout(flushWiktSaves, 1000);
+  }
+  if (HAS_BROWSER && typeof window !== "undefined") {
+    window.addEventListener("pagehide", flushWiktSaves, { capture: true });
+  }
+
+  async function loadWiktFromStore(keys) {
+    const missing = keys.filter(k => !wiktCache.has(k));
+    if (!HAS_BROWSER || !missing.length) return;
     try {
-      if (wiktCache.size > 500) {
-        [...wiktCache.keys()].slice(0, wiktCache.size - 500).forEach(k => wiktCache.delete(k));
+      const stored = await browser.storage.local.get(missing.map(k => WIKT_PREFIX + k));
+      const now = Date.now();
+      for (const k of missing) {
+        const entry = stored[WIKT_PREFIX + k];
+        if (entry && now - entry.t < WIKT_TTL_MS && !wiktCache.has(k)) {
+          wiktCache.set(k, entry.f ?? null);
+        }
       }
-      sessionStorage.setItem(CACHE_KEY, JSON.stringify([...wiktCache.entries()]));
     } catch {}
   }
 
-  let persistTimer = null;
-  function schedulePersist() {
-    if (persistTimer) clearTimeout(persistTimer);
-    persistTimer = setTimeout(() => {
-      persistTimer = null;
-      persistWiktCache();
-    }, 2000);
+  // Einfache Warteschlange: höchstens WIKT_PARALLEL Anfragen gleichzeitig.
+  function withWiktSlot(task) {
+    return new Promise((resolve, reject) => {
+      const run = () => {
+        wiktRunning++;
+        task().then(resolve, reject).finally(() => {
+          wiktRunning--;
+          const next = wiktQueue.shift();
+          if (next) next();
+        });
+      };
+      if (wiktRunning < WIKT_PARALLEL) run(); else wiktQueue.push(run);
+    });
   }
-  // Vor BFCache/Unload ausstehenden Persist flushen, damit nichts verloren geht.
-  if (typeof window !== "undefined" && window.addEventListener) {
-    window.addEventListener("pagehide", () => {
-      if (persistTimer) { clearTimeout(persistTimer); persistTimer = null; }
-      persistWiktCache();
-    }, { capture: true });
-  }
-
-  // Dedupliziert parallele Fetches für dasselbe Lemma. Ohne das würden
-  // zweitrangige Aufrufer den `null`-Sentinel des ersten Calls lesen und
-  // die später eintreffenden Forms nicht verwenden.
-  const wiktInFlight = new Map();
 
   async function fetchWiktionaryForms(lemma) {
     const key = lemma.toLowerCase();
     if (wiktCache.has(key)) return wiktCache.get(key);
     if (wiktInFlight.has(key)) return wiktInFlight.get(key);
 
-    const promise = (async () => {
+    const promise = withWiktSlot(async () => {
+      if (wiktCache.has(key)) return wiktCache.get(key);   // während des Wartens geladen
+      // Gedrosselt oder offline: jetzt nicht fragen und NICHT als "unbekannt" merken –
+      // ein späterer Textknoten versucht es nach der Pause erneut.
+      if (Date.now() < wiktPausedUntil) return null;
+      const url =
+        "https://de.wiktionary.org/w/api.php?action=query&prop=revisions" +
+        "&rvprop=content&rvslots=main&format=json&formatversion=2&origin=*" +
+        "&maxage=86400&smaxage=86400&titles=" +
+        encodeURIComponent(key[0].toUpperCase() + key.slice(1));
       try {
-        const url =
-          "https://de.wiktionary.org/w/api.php?action=query&prop=revisions" +
-          "&rvprop=content&rvslots=main&format=json&origin=*&titles=" +
-          encodeURIComponent(lemma);
-        const resp = await fetch(url, { signal: AbortSignal.timeout(4000) });
-        if (!resp.ok) { wiktCache.set(key, null); return null; }
+        // Ohne Cookies und ohne Referer: Wiktionary erfährt nur das Wort, nicht die Seite.
+        const resp = await fetch(url, {
+          signal: AbortSignal.timeout(4000),
+          credentials: "omit",
+          referrerPolicy: "no-referrer",
+        });
+        if (!resp.ok) {
+          wiktPausedUntil = Date.now() + WIKT_COOLDOWN_MS;
+          return null;
+        }
         const data = await resp.json();
-        const page = Object.values(data?.query?.pages ?? {})[0];
-        if (!page || page.missing !== undefined) { wiktCache.set(key, null); return null; }
-        const wikitext =
-          page?.revisions?.[0]?.slots?.main?.["*"] ??
-          page?.revisions?.[0]?.["*"] ?? "";
-        const forms = parseWiktionaryFlexion(wikitext);
+        const page = data?.query?.pages?.[0];
+        const forms = !page || page.missing || page.invalid
+          ? null
+          : parseWiktionaryFlexion(page.revisions?.[0]?.slots?.main?.content ?? "");
         wiktCache.set(key, forms);
-        schedulePersist();
+        saveWiktLater(key, forms);
         return forms;
       } catch {
-        wiktCache.set(key, null);
+        wiktPausedUntil = Date.now() + WIKT_COOLDOWN_MS / 4;   // Netzfehler/Timeout
         return null;
-      } finally {
-        wiktInFlight.delete(key);
       }
-    })();
+    }).finally(() => wiktInFlight.delete(key));
 
     wiktInFlight.set(key, promise);
     return promise;
   }
 
+  // de.wiktionary gliedert nach "== Wort ({{Sprache|Deutsch}}) ==", ein Abschnitt je
+  // Eintrag. Eine Seite kann mehrere deutsche Einträge haben ("Leiter" m = Person,
+  // "Leiter" f = Steiggerät mit Plural "Leitern"). Bevorzugt wird der Eintrag mit
+  // "Weibliche Wortformen" – das Signal, dass es eine Personenbezeichnung ist.
   function parseWiktionaryFlexion(wikitext) {
-    const deSection =
-      wikitext.match(/==\s*Deutsch\s*==[\s\S]*?(?===\s*\w|\s*$)/)?.[0] ?? wikitext;
-    const tmpl = deSection.match(/\{\{Deutsch Substantiv Übersicht([\s\S]*?)\}\}/i);
+    const sections = wikitext
+      .split(/^(?===[^=])/m)
+      .filter(s => /^==[^=\n]*\{\{Sprache\|Deutsch\}\}/.test(s));
+    let fallback = null;
+    for (const section of sections) {
+      const forms = parseFlexionSection(section);
+      if (forms?.person) return forms;
+      fallback ??= forms;
+    }
+    return fallback;
+  }
+
+  function parseFlexionSection(section) {
+    const tmpl = section.match(/\{\{Deutsch Substantiv Übersicht([\s\S]*?)\}\}/i);
     if (!tmpl) return null;
-    const body = tmpl[1];
     const get = key => {
       const r = new RegExp("\\|\\s*" + key + "\\s*(?:1|\\*)?\\s*=\\s*([^|\\}\\n]+)", "i");
-      const m = body.match(r);
+      const m = tmpl[1].match(r);
       if (!m) return null;
-      return m[1].trim()
-        .replace(/^\[\[|\]\]$/g, "")
-        .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, "$2")
-        .replace(/'{2,}/g, "");
+      const value = m[1].trim()
+        .replace(/\[\[(?:[^\]|]+\|)?([^\]]+)\]\]/g, "$1")
+        .replace(/'{2,}/g, "")
+        .trim();
+      // "—" (kein Plural/Singular) und Wikisyntax-Reste sind keine verwendbare Form.
+      return /^\p{L}[\p{L}-]*$/u.test(value) ? value : null;
     };
-    const forms = {
-      sg: { nom: get("Nominativ Singular") },
-      pl: { nom: get("Nominativ Plural") },
+    const sg = get("Nominativ Singular");
+    const pl = get("Nominativ Plural");
+    if (!sg && !pl) return null;
+    return {
+      sg: { nom: sg },
+      pl: { nom: pl },
+      person: /\{\{Weibliche Wortformen\}\}/.test(section),
     };
-    if (!forms.sg.nom && !forms.pl.nom) return null;
-    return forms;
   }
 
   // ─────────────────────────────────────────────────────────────
   // 2. LEXIKON (Fallback)
   // ─────────────────────────────────────────────────────────────
 
+  // Schlüssel = gegenderter Stamm (ohne End-e: "kolleg" für "Kolleg:innen"). `sg`/`pl`
+  // sind die aufgelösten Formen. Optional: `m` = Maskulinum, falls `sg` feminin ist
+  // (s. u.), und `exact` = nur als ganzes Wort, nicht als Kompositum-Kopf verwenden.
   const LEXICON = new Map([
+    // Umlaut-Stämme: Singular zur natürlichen Femininform ("Ärzt:in" → "Ärztin"). Steht
+    // ein maskulines oder gegendertes Determinativ davor, passt nur das Maskulinum `m`
+    // ("jede:r Ärzt:in" → "jeder Arzt").
+    ["ärzt",            { sg:"Ärztin",     m:"Arzt",      pl:"Ärzte"     }],
+    ["anwält",          { sg:"Anwältin",   m:"Anwalt",    pl:"Anwälte"   }],
+    ["köch",            { sg:"Köchin",     m:"Koch",      pl:"Köche"     }],
+    ["bäuer",           { sg:"Bäuerin",    m:"Bauer",     pl:"Bauern"    }],
+    ["französ",         { sg:"Französin",  m:"Franzose",  pl:"Franzosen" }],
+    ["jüd",             { sg:"Jüdin",      m:"Jude",      pl:"Juden"     }],
+    // "Gäst:innen" – das Femininum "Gästin" wäre selbst ein Pseudo-Femininum (PSEUDO_FEM).
+    ["gäst",            { sg:"Gast",                      pl:"Gäste"     }],
     // Umlaut-Plurale
-    ["ärzt",            { sg:"Ärztin",             pl:"Ärzte"              }],
-    ["anwält",          { sg:"Anwältin",           pl:"Anwälte"            }],
     ["koch",            { sg:"Koch",               pl:"Köche"              }],
     // -e/-en-Plurale (Stamm ≠ Singular oder irregulärer Plural)
     ["bauer",           { sg:"Bauer",              pl:"Bauern"             }],
-    ["bäuer",           { sg:"Bäuerin",            pl:"Bauern"             }],
-    ["köch",            { sg:"Köchin",             pl:"Köche"              }],
     ["nachbar",         { sg:"Nachbar",            pl:"Nachbarn"           }],
     ["kolleg",          { sg:"Kollege",            pl:"Kollegen"           }],
     ["sklav",           { sg:"Sklave",             pl:"Sklaven"            }],
     ["freund",          { sg:"Freund",             pl:"Freunde"            }],
     ["wirt",            { sg:"Wirt",               pl:"Wirte"              }],
+    // Schwache Maskulina auf -e (Stamm ohne End-e: "Kund:in" → "Kunde")
+    ["kund",            { sg:"Kunde",              pl:"Kunden"             }],
+    ["expert",          { sg:"Experte",            pl:"Experten"           }],
+    ["genoss",          { sg:"Genosse",            pl:"Genossen"           }],
+    ["türk",            { sg:"Türke",              pl:"Türken"             }],
+    ["griech",          { sg:"Grieche",            pl:"Griechen"           }],
+    ["tschech",         { sg:"Tscheche",           pl:"Tschechen"          }],
+    ["slowak",          { sg:"Slowake",            pl:"Slowaken"           }],
+    // "zeug" nicht als Kompositum-Kopf: Fahrzeug, Werkzeug, Flugzeug … sind keine Personen.
+    ["zeug",            { sg:"Zeuge",              pl:"Zeugen",   exact:true }],
+    ["augenzeug",       { sg:"Augenzeuge",         pl:"Augenzeugen"        }],
     // -oge/-ogen
     ["pädagog",         { sg:"Pädagoge",           pl:"Pädagogen"          }],
     ["psycholog",       { sg:"Psychologe",         pl:"Psychologen"        }],
@@ -302,7 +399,7 @@
     ["pilot",           { sg:"Pilot",              pl:"Piloten"            }],
     // -at/-aten
     ["kandidat",        { sg:"Kandidat",           pl:"Kandidaten"         }],
-    ["diplomat",        { sg:"Diplomat",            pl:"Diplomaten"         }],
+    ["diplomat",        { sg:"Diplomat",           pl:"Diplomaten"         }],
     ["soldat",          { sg:"Soldat",             pl:"Soldaten"           }],
     ["demokrat",        { sg:"Demokrat",           pl:"Demokraten"         }],
     // -ant/-anten
@@ -316,6 +413,7 @@
     ["absolvent",       { sg:"Absolvent",          pl:"Absolventen"        }],
     ["referent",        { sg:"Referent",           pl:"Referenten"         }],
     ["produzent",       { sg:"Produzent",          pl:"Produzenten"        }],
+    ["präsident",       { sg:"Präsident",          pl:"Präsidenten"        }],
     // -ist/-isten
     ["aktivist",        { sg:"Aktivist",           pl:"Aktivisten"         }],
     ["journalist",      { sg:"Journalist",         pl:"Journalisten"       }],
@@ -324,17 +422,26 @@
     ["jurist",          { sg:"Jurist",             pl:"Juristen"           }],
     ["polizist",        { sg:"Polizist",           pl:"Polizisten"         }],
     ["spezialist",      { sg:"Spezialist",         pl:"Spezialisten"       }],
-    // -eur/-eure (toPlural versagt hier: würde -euren liefern)
+    // -eur/-eure (den Plural kann toPlural; die Einträge sichern die Personen-Erkennung,
+    // Wiktionary führt z. B. bei "Akteur" keine weiblichen Wortformen)
     ["ingenieur",       { sg:"Ingenieur",          pl:"Ingenieure"         }],
     ["redakteur",       { sg:"Redakteur",          pl:"Redakteure"         }],
     ["friseur",         { sg:"Friseur",            pl:"Friseure"           }],
     ["monteur",         { sg:"Monteur",            pl:"Monteure"           }],
+    ["akteur",          { sg:"Akteur",             pl:"Akteure"            }],
     // -or/-oren
     ["autor",           { sg:"Autor",              pl:"Autoren"            }],
     ["professor",       { sg:"Professor",          pl:"Professoren"        }],
     ["direktor",        { sg:"Direktor",           pl:"Direktoren"         }],
     ["moderator",       { sg:"Moderator",          pl:"Moderatoren"        }],
     ["administrator",   { sg:"Administrator",      pl:"Administratoren"    }],
+    ["investor",        { sg:"Investor",           pl:"Investoren"         }],
+    // Plural auf -s bzw. -e (Lehnwörter)
+    ["chef",            { sg:"Chef",               pl:"Chefs"              }],
+    ["fan",             { sg:"Fan",                pl:"Fans"               }],
+    ["hotelier",        { sg:"Hotelier",           pl:"Hoteliers"          }],
+    ["bankier",         { sg:"Bankier",            pl:"Bankiers"           }],
+    ["kapitän",         { sg:"Kapitän",            pl:"Kapitäne"           }],
     // -er/-er (gleicher Plural, häufig gegendert)
     ["pfleger",         { sg:"Pfleger",            pl:"Pfleger"            }],
     ["bürger",          { sg:"Bürger",             pl:"Bürger"             }],
@@ -362,7 +469,8 @@
     ["trainer",         { sg:"Trainer",            pl:"Trainer"            }],
     ["bewohner",        { sg:"Bewohner",           pl:"Bewohner"           }],
     ["besucher",        { sg:"Besucher",           pl:"Besucher"           }],
-    ["einwohner",       { sg:"Einwohner",          pl:"Einwohner"         }],
+    ["einwohner",       { sg:"Einwohner",          pl:"Einwohner"          }],
+    ["anwohner",        { sg:"Anwohner",           pl:"Anwohner"           }],
     ["eigentümer",      { sg:"Eigentümer",         pl:"Eigentümer"         }],
     ["verbraucher",     { sg:"Verbraucher",        pl:"Verbraucher"        }],
     ["gründer",         { sg:"Gründer",            pl:"Gründer"            }],
@@ -373,15 +481,46 @@
     ["wähler",          { sg:"Wähler",             pl:"Wähler"             }],
     ["gegner",          { sg:"Gegner",             pl:"Gegner"             }],
     ["partner",         { sg:"Partner",            pl:"Partner"            }],
+    ["leiter",          { sg:"Leiter",             pl:"Leiter"             }],
+    ["meister",         { sg:"Meister",            pl:"Meister"            }],
+    ["minister",        { sg:"Minister",           pl:"Minister"           }],
+    ["kanzler",         { sg:"Kanzler",            pl:"Kanzler"            }],
+    ["vertreter",       { sg:"Vertreter",          pl:"Vertreter"          }],
+    ["nehmer",          { sg:"Nehmer",             pl:"Nehmer"             }],
+    ["geber",           { sg:"Geber",              pl:"Geber"              }],
+    ["täter",           { sg:"Täter",              pl:"Täter"              }],
+    ["sportler",        { sg:"Sportler",           pl:"Sportler"           }],
+    ["erzieher",        { sg:"Erzieher",           pl:"Erzieher"           }],
+    ["käufer",          { sg:"Käufer",             pl:"Käufer"             }],
+    ["hersteller",      { sg:"Hersteller",         pl:"Hersteller"         }],
+    ["betreuer",        { sg:"Betreuer",           pl:"Betreuer"           }],
+    ["zuschauer",       { sg:"Zuschauer",          pl:"Zuschauer"          }],
+    ["zuhörer",         { sg:"Zuhörer",            pl:"Zuhörer"            }],
+    ["kämpfer",         { sg:"Kämpfer",            pl:"Kämpfer"            }],
+    ["designer",        { sg:"Designer",           pl:"Designer"           }],
+    ["manager",         { sg:"Manager",            pl:"Manager"            }],
+    // Häufig in Banken, Verwaltung, Wohnen (Mieter, Kontoinhaber, Steuerzahler …)
+    ["mieter",          { sg:"Mieter",             pl:"Mieter"             }],
+    ["inhaber",         { sg:"Inhaber",            pl:"Inhaber"            }],
+    ["anleger",         { sg:"Anleger",            pl:"Anleger"            }],
+    ["sparer",          { sg:"Sparer",             pl:"Sparer"             }],
+    ["empfänger",       { sg:"Empfänger",          pl:"Empfänger"          }],
+    ["zahler",          { sg:"Zahler",             pl:"Zahler"             }],
+    ["rentner",         { sg:"Rentner",            pl:"Rentner"            }],
+    ["schuldner",       { sg:"Schuldner",          pl:"Schuldner"          }],
+    ["gläubiger",       { sg:"Gläubiger",          pl:"Gläubiger"          }],
+    ["vermittler",      { sg:"Vermittler",         pl:"Vermittler"         }],
+    ["makler",          { sg:"Makler",             pl:"Makler"             }],
+    ["azubi",           { sg:"Azubi",              pl:"Azubis"             }],
   ]);
 
   // ─────────────────────────────────────────────────────────────
   // 3. HILFSFUNKTIONEN
   // ─────────────────────────────────────────────────────────────
 
-  const NON_TEXT_PARENTS = new Set([
-    "SCRIPT","STYLE","NOSCRIPT","TEXTAREA","CODE","PRE","INPUT","SELECT",
-  ]);
+  // Text in diesen Elementen (auch tief verschachtelt, z. B. Syntax-Highlighting in
+  // <pre><code><span>…) wird nie verändert.
+  const SKIP_SELECTOR = "script,style,noscript,textarea,input,select,code,pre,kbd,samp";
 
   const NORMALIZABLE_ATTRIBUTES = [
     "title","alt","placeholder","aria-label",
@@ -416,14 +555,17 @@
   // 4. FORMEN-AUFLÖSUNG
   // ─────────────────────────────────────────────────────────────
 
-  function resolveForm(stem, isPlural, wiktForms) {
+  function resolveForm(stem, isPlural, wiktForms, masc = false) {
     const lower = stem.toLowerCase();
 
     // Das kuratierte LEXICON ist autoritativ und hat Vorrang vor Wiktionary:
     // Manche Gender-Stämme fallen mit einem anderen echten Wort zusammen (z. B.
     // "Kolleg" = das Kolleg), dessen Wiktionary-Formen sonst fälschlich gewönnen.
     const entry = LEXICON.get(lower);
-    if (entry) return preserveCase(stem, isPlural ? entry.pl : entry.sg);
+    if (entry) {
+      const form = isPlural ? entry.pl : (masc && entry.m) || entry.sg;
+      return preserveCase(stem, form);
+    }
 
     if (wiktForms) {
       const form = isPlural
@@ -433,14 +575,26 @@
     }
 
     // Regelbasierter Fallback
-    return isPlural ? toPlural(stem) : stem;
+    return isPlural ? toPlural(stem) : toSingular(stem);
   }
 
   function toPlural(stem) {
+    // Endungen mit -e-Plural (Akteure, Offiziere, Notare, Aktionäre, Prüflinge) – vor der
+    // -er-Regel, weil "-ier"/"-eur" sonst als "-er" gälten bzw. "-euren" entstünde.
+    if (/(?:eur|ier|ar|är|ling)$/i.test(stem)) return stem + "e";
+    // Schwach deklinierte Fremdwörter (Fotografen, Philosophen, Ökonomen, Oligarchen,
+    // Theologen, Pädagogen, Katholiken).
+    if (/(?:graf|graph|soph|nom|arch|log|gog|ik)$/i.test(stem)) return stem + "en";
     if (/(er|el|en|chen|lein)$/i.test(stem)) return stem;
     if (/e$/i.test(stem)) return stem + "n";
     if (/[tdnrsl]$/i.test(stem)) return stem + "en";
     return stem;
+  }
+
+  // Singular aus dem Stamm: Nur bei -loge/-goge fehlt dem Stamm das End-e sicher
+  // ("Theolog:in" → "Theologe"); andere -e-Wörter stehen im LEXICON (Kunde, Experte).
+  function toSingular(stem) {
+    return /(?:log|gog)$/i.test(stem) ? stem + "e" : stem;
   }
 
   // Dativ Plural: regelhaft ein -n an den Nominativ Plural, außer er endet schon
@@ -470,6 +624,28 @@
     ["diese","dieses"],["jene","jenes"],["jede","jedes"],["welche","welches"],
     ["manche","manches"],["solche","solches"],["jegliche","jegliches"],["sämtliche","sämtliches"],
   ]);
+
+  // Maskuline Determinative vor einer Singularform: Dann passt nur das Maskulinum
+  // ("ein Ärzt:in" → "ein Arzt"). "der", "des", "eines" fehlen bewusst – "der" ist auch
+  // feminin (Dativ/Genitiv: "mit der Ärzt:in"), die Genitive verlangten "-es".
+  const MASC_DETERMINERS = new Set([
+    "den","dem","ein","einen","einem","kein","keinen","keinem",
+    "irgendein","irgendeinen","irgendeinem",
+    "mein","meinen","meinem","dein","deinen","deinem","sein","seinen","seinem",
+    "ihr","ihren","ihrem","unser","unseren","unserem","euer","euren","eurem",
+    "jeder","jeden","jedem","dieser","diesen","diesem","jener","jenen","jenem",
+    "welcher","welchen","welchem","mancher","manchen","manchem","solcher","solchen","solchem",
+  ]);
+
+  // Determinative/Präpositionen mit Artikel, nach denen "mensch"/"frau" ein Substantiv
+  // ist ("jeder mensch", "meine frau") und NICHT das Pronomen "man".
+  const NOUN_DETERMINERS = new Set([
+    "der","die","das","den","dem","des","als","zum","zur","vom","beim","im","am",
+  ]);
+  for (const base of ["ein","kein","mein","dein","sein","ihr","unser","euer","eur",
+                      "jed","dies","jen","welch","manch","solch","irgendein"]) {
+    for (const ending of ["","e","en","em","es","er"]) NOUN_DETERMINERS.add(base + ending);
+  }
 
   // Pseudo-Feminina: künstliche -in-Ableitungen zu Grundwörtern, die GAR KEINE
   // männliche Personenbezeichnung sind (Gast, Vorstand, Mensch, Mitglied …). Solche
@@ -580,6 +756,21 @@
     return false;
   }
 
+  // Das Wort direkt vor `offset` (nur durch Leerraum getrennt, ohne führende Klammern
+  // oder Anführungszeichen), sonst "".
+  function precedingToken(text, offset) {
+    const token = text.slice(Math.max(0, offset - 40), offset).match(/(\S+)\s+$/u)?.[1] ?? "";
+    return token.replace(/^[^\p{L}]+/u, "");
+  }
+
+  // Verlangt der linke Kontext das Maskulinum? Ja nach maskulinem Determinativ ("ein",
+  // "jeden" …) und nach einem gegenderten Determinativ/Adjektiv ("jede:r", "der*die",
+  // "gute:r") – geprüft, BEVOR diese selbst aufgelöst werden.
+  function isMascContext(text, offset) {
+    const tok = precedingToken(text, offset);
+    return reGenderedToken.test(tok) || MASC_DETERMINERS.has(tok.toLowerCase());
+  }
+
   // Das für das Partizip maßgebliche Determinativ (kleingeschrieben). Sucht nach links
   // und überspringt dabei attributive Adjektive ("liebe", "junge"), damit Anreden wie
   // "Liebe Studierende" korrekt als Plural erkannt werden. Stoppt – analog zu
@@ -636,7 +827,10 @@
   // 5. KOMPOSITA
   // ─────────────────────────────────────────────────────────────
 
-  const SORTED_STEMS = [...LEXICON.keys()].sort((a, b) => b.length - a.length);
+  const SORTED_STEMS = [...LEXICON]
+    .filter(([, entry]) => !entry.exact)
+    .map(([stem]) => stem)
+    .sort((a, b) => b.length - a.length);
 
   function splitCompound(word) {
     const lower = word.toLowerCase();
@@ -648,12 +842,14 @@
     return null;
   }
 
+  // Personenbezeichnung? Belege: LEXICON, ein LEXICON-Stamm als Kompositum-Kopf oder
+  // Wiktionary mit "Weibliche Wortformen". Dass Wiktionary das Wort nur als Substantiv
+  // kennt, genügt NICHT – sonst gälten "Termin", "Farbe" oder "Check" als Person.
   function isLikelyPersonStem(stem) {
     const lower = stem.toLowerCase();
     if (LEXICON.has(lower)) return true;
     if (splitCompound(stem)) return true;
-    if (getWikt(stem)) return true;
-    return false;
+    return getWikt(stem)?.person === true;
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -663,17 +859,34 @@
   // Bindestrich wird bewusst NICHT als Gender-Marker unterstützt:
   // Er ist als Gendering-Form extrem selten, kollidiert aber häufig mit normalen
   // deutschen Komposita (Standard-installationen), CLI-Flags (tail -n), URLs und Code.
-  const MARKER = "[:*·•‧∙⋅⋆_/]";
-  const STEM   = "([\\p{L}]{2,})";
+  // Neben den gängigen Zeichen auch typografische Varianten (∗ ⁎ ꞉ ∶).
+  const MARKER = "[:*·•‧∙⋅⋆_/∗⁎꞉∶]";
+  // Der Stamm beginnt am Wortanfang. Das ändert keine Treffer, erspart der Regex-Engine
+  // aber, es an jeder Position mitten im Wort erneut zu versuchen (≈ Faktor 3).
+  const STEM   = "(?<![\\p{L}])([\\p{L}]{2,})";
+  const WORD_START = "(?<![\\p{L}\\p{N}_])";
+  const WORD_END   = "(?![\\p{L}\\p{N}_\\/])";
 
-  const reGenderInfo            = /\s*[\(\[]\s*(?:m|w|d)\s*(?:[\/|]\s*(?:m|w|d))+\s*[\)\]]/giu;
+  const reGenderInfo = new RegExp(
+    "\\s*[(\\[]\\s*(?:" +
+      "(?:m|w|d|f|x|div|divers)\\s*(?:[\\/|]\\s*(?:m|w|d|f|x|div|divers)\\s*)+" +
+      "|all genders|alle geschlechter|gn\\*?" +
+    ")\\s*[)\\]]",
+    "giu"
+  );
   // Lookahead schließt neben Buchstaben auch `/` und `_` aus, damit URLs wie
   // "foo.de/in/impressum" und Slugs wie "foo_in_bar" nicht fälschlich als
-  // Gendering gewertet werden. Marker-Set selbst bleibt unverändert.
-  const reInnenWithMarker       = new RegExp(STEM + "\\s*(?:\\(|\\[)?" + MARKER + "\\s?(?:-)?innen(?:\\)|\\])?(?![\\p{L}\\/_])", "giu");
-  const reInWithMarker          = new RegExp(STEM + "\\s*(?:\\(|\\[)?" + MARKER + "\\s?(?:-)?in(?:\\)|\\])?(?![\\p{L}\\/_])",    "giu");
-  const reInnenParen            = new RegExp(STEM + "\\s*\\(innen\\)", "giu");
-  const reInParen               = new RegExp(STEM + "\\s*\\(in\\)",    "giu");
+  // Gendering gewertet werden. Leerraum vor/nach dem Marker und die Endung werden
+  // gefangen, damit markerFormKind sie bewerten kann.
+  // Eine schließende Klammer gehört nur dann zur Form, wenn direkt vor dem Marker eine
+  // öffnende steht ("Lehrer(:in)") – sonst umschließt sie den Ausdruck und bleibt stehen
+  // ("(Ansprechpartner:in)" → "(Ansprechpartner)", nicht "(Ansprechpartner").
+  // Gruppen: 1 Stamm, 2 Leerraum davor, 3 Marker, 4 Leerraum danach, 5 Endung.
+  const closeBracket = ending => "(?:(?<=[(\\[]" + MARKER + "\\s?-?" + ending + ")[)\\]])?";
+  const reInnenWithMarker       = new RegExp(STEM + "(\\s*)(?:\\(|\\[)?(" + MARKER + ")(\\s?)(?:-)?(innen)" + closeBracket("innen") + "(?![\\p{L}\\/_])", "giu");
+  const reInWithMarker          = new RegExp(STEM + "(\\s*)(?:\\(|\\[)?(" + MARKER + ")(\\s?)(?:-)?(in)"    + closeBracket("in")    + "(?![\\p{L}\\/_])", "giu");
+  const reInnenParen            = new RegExp(STEM + "(\\s*)\\((innen)\\)", "giu");
+  const reInParen               = new RegExp(STEM + "(\\s*)\\((in)\\)",    "giu");
   // Binnen-I ("LehrerInnen" → "Lehrer", "BürgerIn" → "Bürger"). Der Stamm darf
   // beliebig anfangen (auch großgeschrieben – das ist der Normalfall bei deutschen
   // Substantiven). Statt `\b` (ASCII-basiert, scheitert an Umlauten am Wortrand)
@@ -682,26 +895,52 @@
   // `i`-Flag. Die Auflösung ist zusätzlich durch isLikelyPersonStem abgesichert.
   const reBinnenIPlural         = new RegExp("(?<![\\p{L}])(\\p{L}[\\p{L}]*)Innen(?![\\p{L}\\/_])", "gu");
   const reBinnenISingular       = new RegExp("(?<![\\p{L}])(\\p{L}[\\p{L}]*)In(?![\\p{L}\\/_])",    "gu");
-  const reInSlashInnen          = new RegExp(STEM + "In/Innen\\b", "gi");
-  // `(?!\/)` verhindert False-Positives in URLs/Pfaden wie "path/n/foo".
-  // Bei `_` greift bereits die Wortgrenze `\b` (weil `_` in `\w` enthalten ist).
-  const reAdjNWithMarker        = new RegExp("(\\b[\\p{L}]{2,})\\s*" + MARKER + "\\s*n\\b(?!\\/)", "gu");
-  const reAdjEWithMarker        = new RegExp("(\\b[\\p{L}]{2,})\\s*" + MARKER + "\\s*e\\b(?!\\/)", "gu");
-  const reAdjRWithMarker        = new RegExp("(\\b[\\p{L}]{2,})\\s*" + MARKER + "\\s*r\\b(?!\\/)", "gu");
+  // "LehrerIn/Innen". Das große "I" vor dem Slash ist Pflicht: "Lehrerin/innen" ist die
+  // natürliche Femininform (Lehrerin/Lehrerinnen) und bleibt stehen.
+  const reInSlashInnen          = new RegExp(STEM + "In\\/[Ii]nnen(?![\\p{L}])", "gu");
+  // Adjektiv-/Pronomenendungen. Nur kompakt geschrieben (ohne Leerzeichen am Marker) –
+  // sonst träfe es Doppelpunkt-Aufzählungen und Formeln ("Beispiel: n = 5",
+  // "2 * pi * r", "Meter: m"). Bei -n/-r endet der Stamm auf -e (jede:r, eine:n).
+  const reAdjNWithMarker        = new RegExp(WORD_START + "(\\p{L}+e)"   + MARKER + "n" + WORD_END, "gu");
+  const reAdjEWithMarker        = new RegExp(WORD_START + "(\\p{L}{2,})" + MARKER + "e" + WORD_END, "gu");
+  const reAdjRWithMarker        = new RegExp(WORD_START + "(\\p{L}+e)"   + MARKER + "r" + WORD_END, "gu");
   // Dativ-Maskulinum: "jeder:m" → "jedem", "dieser:m" → "diesem", "der:m" → "dem".
   // Anders als die :r/:n/:e-Muster wird hier nicht angehängt, sondern die
   // Endung -er durch -em ersetzt (sonst käme "jederm" raus). Stamm-Minimum
   // ist bewusst 1 Buchstabe, damit auch "der:m" greift.
-  const reAdjErMWithMarker      = new RegExp("(\\b[\\p{L}]+)er\\s*" + MARKER + "\\s*m\\b(?!\\/)", "gu");
-  const reInnenCompound         = new RegExp(STEM + "\\s*(?:\\(|\\[)?" + MARKER + "\\s?(?:-)?innen([\\p{Ll}][\\p{L}]*)", "giu");
+  const reAdjErMWithMarker      = new RegExp(WORD_START + "(\\p{L}+)er"  + MARKER + "m" + WORD_END, "gu");
+  // Gegendertes Kompositum ("Lehrer*innenzimmer"). Immer kompakt geschrieben; mit
+  // Leerzeichen wäre "Politik · Innenpolitik" oder "Bauer: Innenpolitisch …" ein Treffer.
+  const reInnenCompound         = new RegExp(STEM + "(?:\\(|\\[)?" + MARKER + "(?:-)?(innen)([\\p{Ll}][\\p{L}]*)", "giu");
   const reStandaloneInMarker    = new RegExp("^\\s*(?:\\(|\\[)?" + MARKER + "\\s*(?:-)?\\s*in(?:\\)|\\])?\\s*$",    "iu");
   const reStandaloneInnenMarker = new RegExp("^\\s*(?:\\(|\\[)?" + MARKER + "\\s*(?:-)?\\s*innen(?:\\)|\\])?\\s*$", "iu");
+  // Ein Wort mit Marker im Inneren ("jede:r", "der*die") – für isMascContext.
+  const reGenderedToken         = new RegExp("^\\p{L}+" + MARKER + "\\p{L}+$", "u");
+
+  // Artikel-/Pronomenpaare → Maskulinum ("der*die Nutzer*in" → "der Nutzer"). Nur
+  // kompakt und als ganzes Wort: "der/die/das" (Aufzählung in Grammatiktexten) bleibt,
+  // weil nach "die" ein weiterer Slash folgt.
+  const PAIR_TO_MASC = new Map([
+    ["der|die","der"],["die|der","der"],["den|die","den"],["die|den","den"],
+    ["dem|der","dem"],["der|dem","dem"],["des|der","des"],["der|des","des"],
+    ["er|sie","er"],["sie|er","er"],["ihn|sie","ihn"],["sie|ihn","ihn"],
+    ["ihm|ihr","ihm"],["ihr|ihm","ihm"],["sein|ihr","sein"],["ihr|sein","sein"],
+    ["seine|ihre","seine"],["ihre|seine","seine"],["seinen|ihren","seinen"],
+    ["ihren|seinen","seinen"],["seinem|ihrem","seinem"],["ihrem|seinem","seinem"],
+  ]);
+  const PAIR_WORDS = [...new Set([...PAIR_TO_MASC.keys()].flatMap(k => k.split("|")))]
+    .sort((a, b) => b.length - a.length).join("|");
+  const reArticlePair = new RegExp(
+    WORD_START + "(" + PAIR_WORDS + ")" + MARKER + "(" + PAIR_WORDS + ")" + WORD_END, "giu"
+  );
+
   // Indefinitpronomen-Reversion: "mensch"/"frau" als entgendertes Ersatzwort
   // für "man" (z. B. "könnte mensch sagen") werden zu "man" zurückgeführt.
   // BEWUSST case-sensitiv und nur kleingeschrieben: Das großgeschriebene
   // Substantiv "Mensch"/"Frau" sowie "Menschen"/"Frauen" bleiben unangetastet.
   // Satzanfänge (großgeschrieben) werden nicht erfasst, um den Substantiv-
-  // Sinn nicht zu zerstören.
+  // Sinn nicht zu zerstören. Nach einem Determinativ ("jeder mensch", "meine frau")
+  // ist es in klein geschriebenen Texten ebenfalls das Substantiv (NOUN_DETERMINERS).
   const reIndefinitePronoun     = /\b(?:mensch|frau)\b/g;
   // Pseudo-Feminina (kein Marker): "Gästin"/"Gästinnen" – auch als Kompositum-KOPF
   // ("Stammgästin" → "Stammgast", "Pflegefachkräftin" → "Pflegefachkraft"). Da kein
@@ -721,7 +960,7 @@
   // Schreibt nur das Determinativ um; das Wort selbst bleibt für rePseudoFem stehen.
   // `(?![\p{L}])` schließt den Plural (…innen) aus.
   const rePseudoFemArt = new RegExp(
-    "\\b(" + [...FEM_TO_MASC_NOM.keys()].sort((a, b) => b.length - a.length).join("|") +
+    "(?<![\\p{L}])(" + [...FEM_TO_MASC_NOM.keys()].sort((a, b) => b.length - a.length).join("|") +
     ")(\\s+)(\\p{L}*?)(" + PSEUDO_FEM_ALT + ")(?![\\p{L}])",
     "giu"
   );
@@ -740,8 +979,8 @@
   // Signal für einen Nominativ-Satzanfang; kleingeschrieben mitten im Satz ist
   // "die"/"eine" mehrdeutig (Nom./Akk.) und wird NICHT angetastet.
   const reArtSingularNom = new RegExp(
-    "\\b(" + [...FEM_TO_MASC_NOM.keys()].join("|") + ")(\\s+)([\\p{L}]{2,})\\s*(?:\\(|\\[)?" +
-    MARKER + "\\s?(?:-)?in(?:\\)|\\])?(?![\\p{L}\\/_])",
+    "(?<![\\p{L}])(" + [...FEM_TO_MASC_NOM.keys()].join("|") + ")(\\s+)([\\p{L}]{2,})(\\s*)(?:\\(|\\[)?(" +
+    MARKER + ")(\\s?)(?:-)?(in)" + closeBracket("in") + "(?![\\p{L}\\/_])",
     "giu"
   );
 
@@ -751,74 +990,183 @@
     "cousin","raisin","sequin","goblin","penguin","kabine","disziplin",
   ]);
 
-  // Vorfilter für normalizeGenderedText. Wird NUR für test() genutzt –
-  // eventuelle False-Positives hier sind harmlos, weil die echten Patterns
-  // danach laufen und nichts finden. Das `i`-Flag liefert die Case-Insensitivität,
-  // die die markerbehafteten Patterns (ursprünglich `giu`) erwarten; es darf hier
-  // NICHT entfernt werden. Auf die case-sensitiven reBinnenI*-Muster wirkt das
-  // `i` im Vorfilter zwar lockernd, das ist aber unschädlich (s. o.).
-  const reAnyGenderPattern = new RegExp(
-    [
-      reGenderInfo.source,
-      reAdjNWithMarker.source,
-      reAdjEWithMarker.source,
-      reAdjRWithMarker.source,
-      reAdjErMWithMarker.source,
-      reIndefinitePronoun.source,
-      rePseudoFem.source,
-      reParticiple.source,
-      reInSlashInnen.source,
-      reBinnenIPlural.source,
-      reBinnenISingular.source,
-      reInnenCompound.source,
-      reInnenWithMarker.source,
-      reInWithMarker.source,
-      reInnenParen.source,
-      reInParen.source,
-    ].join("|"),
-    "iu"
-  );
+  // Vorfilter: billige NOTWENDIGE Bedingungen aller Muster oben – ein Buchstabe direkt
+  // vor einem Marker + "in", ein Binnen-I, "(m/…", ein Pseudo-Femininum usw. Ohne
+  // gierige Stämme und ohne Backtracking, deshalb schnell. Er darf zu viel melden, aber
+  // nie zu wenig (Test "Vorfilter übersieht nichts"). Getrennt nach Groß-/Kleinschreibung:
+  // Binnen-I und "mensch"/"frau" sind case-sensitiv, mit `i` träfe der Filter sonst
+  // jedes "ein", "Berlin" oder "Frau".
+  const reCandidateCI = new RegExp([
+    "\\p{L}\\s*[(\\[]?" + MARKER + "\\s?-?in",           // Marker-Formen (inkl. Kompositum/Slash)
+    "\\p{L}\\s*\\(in",                                     // Klammerformen
+    "\\p{L}" + MARKER + "\\p{L}",                          // Adjektivendungen, Artikelpaare
+    "[(\\[]\\s*(?:[mwdfx]\\s*[\\/|]|div|all|gn)",         // Genus-Kürzel
+    "(?:" + PSEUDO_FEM_ALT + ")(?:nen)?(?![\\p{L}])",     // Pseudo-Feminina
+    "(?:" + PART_ALT + ")(?:en|e|er|em|es)(?![\\p{L}])",  // Partizipien
+  ].join("|"), "iu");
+  const reCandidateCS = /\p{L}In(?:nen)?(?![\p{L}/_])|\b(?:mensch|frau)\b/u;
+
+  function hasGenderCandidate(text) {
+    return reCandidateCI.test(text) || reCandidateCS.test(text);
+  }
 
   // ─────────────────────────────────────────────────────────────
   // 7. NORMALISIERUNG
   // ─────────────────────────────────────────────────────────────
 
   function getWikt(stem) {
-    const lower = stem.toLowerCase();
-    const cap   = lower[0].toUpperCase() + lower.slice(1);
-    return wiktCache.get(lower) ?? wiktCache.get(cap) ?? null;
+    return wiktCache.get(stem.toLowerCase()) ?? null;
   }
 
-  function replaceStem(stem, isPlural) {
-    if (FALSE_POSITIVES.has(stem.toLowerCase())) return stem;
-    const compound = splitCompound(stem);
+  function replaceStem(stem, isPlural, masc = false) {
+    const lower = stem.toLowerCase();
+    if (FALSE_POSITIVES.has(lower)) return stem;
+    // Ein exakter LEXICON-Treffer geht vor die Zerlegung ("Mitarbeiter", nicht "Mit" + "arbeiter").
+    const compound = LEXICON.has(lower) ? null : splitCompound(stem);
     if (compound) {
-      const resolved = resolveForm(compound.stem, isPlural, getWikt(compound.stem));
+      const resolved = resolveForm(compound.stem, isPlural, getWikt(compound.stem), masc);
       // Der Stamm steht als zweiter Kompositateil mitten im Wort und muss
       // kleingeschrieben werden – sonst entstünde "BeNutzer", "SozialArbeiter".
-      const joined = resolved
-        ? resolved[0].toLowerCase() + resolved.slice(1)
-        : resolved;
+      // Nur in durchgängig großgeschriebenen Wörtern bleibt er groß ("SOZIALARBEITER").
+      const upper = compound.prefix === compound.prefix.toUpperCase() &&
+                    compound.prefix !== compound.prefix.toLowerCase();
+      const joined = !resolved ? resolved
+        : upper ? resolved.toUpperCase()
+        : resolved[0].toLowerCase() + resolved.slice(1);
       return compound.prefix + joined;
     }
-    return resolveForm(stem, isPlural, getWikt(stem));
+    return resolveForm(stem, isPlural, getWikt(stem), masc);
+  }
+
+  // Bewertet eine Marker-Form anhand von Marker, Leerraum am Marker (`gap`) und Endung:
+  //   "trusted" – eindeutig Gendering: kompakt ("Lehrer:innen", "Nutzer*Innen").
+  //   "person"  – nur bei Personenbezeichnung: großes "I" nach "/" (dort beginnt oft ein
+  //               neues Wort: "Außen/Innen", "Amoralismus/In|tellekt" über Textknoten
+  //               verteilt) und ":In" vor einem Wort (fehlendes Leerzeichen: "Hinweis:In diesem").
+  //   "strict"  – mit Leerzeichen ("Mieter: innen", aber auch "Farbe: innen weiß",
+  //               "Lautsprecher: innen"): nur bei sicher belegter Person.
+  //   "no"      – normales Deutsch: Leerzeichen + großes "I" (Satzanfang nach Doppelpunkt),
+  //               Singular mit Leerzeichen vor einem weiteren Wort ("Termin: in Kürze")
+  //               oder "innen und außen".
+  // Durchgängig großgeschriebene Endungen ("MITARBEITER:INNEN") zählen als klein.
+  function markerFormKind(marker, gap, suffix, singular, rest) {
+    const capital = suffix[0] === "I" && /[a-z]/.test(suffix);
+    const beforeWord = /^\s+\p{L}/u.test(rest);
+    if (gap !== "") {
+      if (capital || (singular && beforeWord)) return "no";
+      if (!singular && /^\s*(?:und|oder|sowie|wie|&|\/|,)?\s*außen/iu.test(rest)) return "no";
+      return "strict";
+    }
+    if (!capital) return "trusted";
+    if (marker === "/" || (singular && beforeWord && /[:∶꞉]/.test(marker))) return "person";
+    return "trusted";
+  }
+
+  // Stämme, die auf der Seite kompakt gegendert vorkommen ("Maurer:innen"). Sie gelten
+  // auch in den mehrdeutigen Schreibweisen als Person – Texte mischen oft "Maurer:innen"
+  // und "Maurer: innen". Gefüllt von der DOM-Verarbeitung (Vorab-Scan + jeder Block).
+  const pageStems = new Set();
+
+  // Belege sind kompakte Formen und Leerzeichen-Formen mit sicher belegter Person
+  // ("Kund: innen" – Lexikon). Beide zeigen zugleich: Dieser Text gendert.
+  function collectConfirmedStems(text, into) {
+    const scan = (re, singular) => {
+      for (const m of text.matchAll(re)) {
+        if (/in$/i.test(m[1])) continue;
+        const kind = markerFormKind(m[3], m[2] + m[4], m[5], singular, text.slice(m.index + m[0].length));
+        if (kind === "trusted" || (kind === "strict" && isKnownPerson(m[1], false))) {
+          into.add(m[1].toLowerCase());
+        }
+      }
+    };
+    scan(reInnenWithMarker, false);
+    scan(reInWithMarker, true);
+    return into;
+  }
+
+  // `confirmed`: Belege aus dem aktuellen Text (s. applyPatterns).
+  function isConfirmedStem(stem, confirmed) {
+    const lower = stem.toLowerCase();
+    return confirmed.has(lower) || pageStems.has(lower);
+  }
+
+  // Gendert der Text bzw. die Seite nachweislich (mindestens ein Beleg)?
+  function isGenderingContext(confirmed) {
+    return confirmed.size > 0 || pageStems.size > 0;
+  }
+
+  // Strenger als isLikelyPersonStem: Ein Kompositum mit Personen-Kopf zählt nur, wenn der
+  // Kopf allein kein Wort ist ("Privatkund" kann nur von "Privatkund:innen" stammen) oder
+  // wenn der Kontext nachweislich gendert (`gendering`). Sonst könnte es ein Gerät sein:
+  // "Lautsprecher" endet auf das eigenständige Wort "sprecher".
+  function isKnownPerson(stem, gendering) {
+    const lower = stem.toLowerCase();
+    if (LEXICON.has(lower) || getWikt(stem)?.person === true) return true;
+    const compound = splitCompound(stem);
+    return !!compound && (gendering || isBoundStem(compound.stem));
+  }
+
+  // Gegenderter Stamm, der allein kein Wort ist: "kund" (Kunde), "ärzt" (Arzt), "förder".
+  function isBoundStem(key) {
+    return LEXICON.get(key).sg.toLowerCase() !== key;
+  }
+
+  function markerFormOk(stem, marker, gap, suffix, singular, rest, confirmed) {
+    switch (markerFormKind(marker, gap, suffix, singular, rest)) {
+      case "trusted": return true;
+      case "person":  return isLikelyPersonStem(stem) || isConfirmedStem(stem, confirmed);
+      case "strict":  return isKnownPerson(stem, isGenderingContext(confirmed)) ||
+                             isConfirmedStem(stem, confirmed);
+      default:        return false;
+    }
+  }
+
+  // Unsichtbare Zeichen – weiches Trennzeichen (U+00AD, &shy;) und Nullbreiten-Zeichen
+  // (U+200B–U+200D) – verstecken Gendering vor den Mustern ("Lehrer&shy;:innen"). Sie
+  // werden nur aus Wörtern entfernt, die danach gegendert aussehen – sonst gingen
+  // Silbentrennung und Emoji-Sequenzen (z. B. 👩‍💻 = 👩 + U+200D + 💻) im übrigen Text verloren.
+  const INVISIBLE        = "[" + String.fromCharCode(0x00AD, 0x200B, 0x200C, 0x200D) + "]";
+  const reInvisible      = new RegExp(INVISIBLE);
+  const reInvisibleAll   = new RegExp(INVISIBLE, "g");
+  const reInvisibleToken = new RegExp("\\S*" + INVISIBLE + "\\S*", "gu");
+
+  function stripInvisibleInCandidates(text) {
+    if (!reInvisible.test(text)) return text;
+    return text.replace(reInvisibleToken, token => {
+      const clean = token.replace(reInvisibleAll, "");
+      return hasGenderCandidate(clean) ? clean : token;
+    });
   }
 
   function normalizeGenderedText(text, participles = participlesEnabled) {
     if (!text) return text;
-    let out = text.replace(/[\u00AD\u200B\u200C\u200D]/g, "");
-    reAnyGenderPattern.lastIndex = 0;
-    if (!reAnyGenderPattern.test(out)) return out;
+    const prepared = stripInvisibleInCandidates(text);
+    if (!hasGenderCandidate(prepared)) return text;
+    const out = applyPatterns(prepared, participles);
+    // Nichts ersetzt → exakt das Original zurückgeben (auch dessen unsichtbare Zeichen).
+    return out === prepared ? text : out;
+  }
 
+  function applyPatterns(text, participles) {
+    let out = text;
     const R = (re, fn) => { re.lastIndex = 0; out = out.replace(re, fn); };
 
     // Plural-Form auflösen und – falls der Satzkontext eindeutig Dativ verlangt –
     // in den Dativ Plural setzen. `str`/`off` kommen aus dem replace-Callback.
     const plural = (stem, off, str) =>
       isDativContext(str, off) ? toDativPlural(replaceStem(stem, true)) : replaceStem(stem, true);
+    const singular = (stem, off, str) => replaceStem(stem, false, isMascContext(str, off));
+
+    // Kompakt gegenderte Stämme dieses Textes belegen dieselben Stämme in mehrdeutiger
+    // Schreibweise – unabhängig von der Reihenfolge ("Maurer: innen … Maurer:innen").
+    const confirmed = collectConfirmedStems(text, new Set());
+    const isPerson = stem => isLikelyPersonStem(stem) || isConfirmedStem(stem, confirmed);
+    const formOk = (m, stem, marker, gap, suffix, singularForm, off, str) =>
+      markerFormOk(stem, marker, gap, suffix, singularForm, str.slice(off + m.length), confirmed);
 
     R(reGenderInfo,      ()            => "");
-    R(reIndefinitePronoun, ()          => "man");
+    R(reIndefinitePronoun, (m, off, str) =>
+      NOUN_DETERMINERS.has(precedingToken(str, off).toLowerCase()) ? m : "man");
     // Artikel-Kongruenz VOR dem Wort-Rückbau, damit das Pseudo-Femininum hier noch steht.
     // Nur großgeschriebenes Determinativ (eindeutiger Nominativ-Satzanfang); kleingeschrieben
     // mitten im Satz ist "die"/"eine" mehrdeutig und bleibt unangetastet. Feminine Grundwörter
@@ -843,30 +1191,46 @@
         ? prefix + form[0].toLowerCase() + form.slice(1)
         : preserveCase(word, form);
     });
-    R(reAdjNWithMarker,  (_, stem)     => stem + "n");
-    R(reAdjEWithMarker,  (_, stem)     => stem);
-    R(reAdjRWithMarker,  (_, stem)     => stem + "r");
-    R(reAdjErMWithMarker,(_, stem)     => stem + "em");
     R(reInSlashInnen,    (_, stem, off, str) => plural(stem, off, str));
-    R(reBinnenIPlural,   (m, stem, off, str) => isLikelyPersonStem(stem) ? plural(stem, off, str) : m);
-    R(reBinnenISingular, (m, stem)     => isLikelyPersonStem(stem) ? replaceStem(stem, false) : m);
-    R(reInnenCompound,   (m, stem, suffix) => {
-      if (!isLikelyPersonStem(stem)) return m;
+    R(reBinnenIPlural,   (m, stem, off, str) => isPerson(stem) ? plural(stem, off, str) : m);
+    R(reBinnenISingular, (m, stem, off, str) => isPerson(stem) ? singular(stem, off, str) : m);
+    R(reInnenCompound,   (m, stem, _innen, suffix) => {
+      if (!isPerson(stem)) return m;
       return replaceStem(stem, true) + suffix;
     });
-    R(reInnenWithMarker, (_, stem, off, str) => plural(stem, off, str));
+    // "Lehrerin/innen" ist die natürliche Femininform (Lehrerin/Lehrerinnen) – stehen lassen.
+    R(reInnenWithMarker, (m, stem, gap1, marker, gap2, suffix, off, str) =>
+      !/in$/i.test(stem) && formOk(m, stem, marker, gap1 + gap2, suffix, false, off, str)
+        ? plural(stem, off, str) : m);
     // Artikel-Kongruenz VOR reInWithMarker, damit das "…:in" hier noch vorhanden ist.
-    R(reArtSingularNom, (m, det, ws, stem) => {
+    R(reArtSingularNom, (m, det, ws, stem, gap1, marker, gap2, suffix, off, str) => {
       if (det[0] === det[0].toLowerCase()) return m;   // nur großgeschrieben (Satzanfang)
-      if (!isLikelyPersonStem(stem)) return m;
+      if (!formOk(m, stem, marker, gap1 + gap2, suffix, true, off, str)) return m;
+      if (!isPerson(stem)) return m;
       const noun = replaceStem(stem, false);
       if (/in$/i.test(noun)) return m;                 // aufgelöst feminin (Ärztin) → Artikel feminin lassen
       const masc = FEM_TO_MASC_NOM.get(det.toLowerCase());
       return masc ? preserveCase(det, masc) + ws + noun : m;
     });
-    R(reInWithMarker,    (_, stem)     => replaceStem(stem, false));
-    R(reInnenParen,      (_, stem, off, str) => plural(stem, off, str));
-    R(reInParen,         (_, stem)     => replaceStem(stem, false));
+    // Singularformen VOR den Adjektiv-/Artikelmustern: So sieht isMascContext noch das
+    // gegenderte Determinativ ("jede:r Ärzt:in" → "jede:r Arzt" → "jeder Arzt").
+    R(reInWithMarker, (m, stem, gap1, marker, gap2, suffix, off, str) =>
+      formOk(m, stem, marker, gap1 + gap2, suffix, true, off, str)
+        ? singular(stem, off, str) : m);
+    R(reInnenParen, (m, stem, gap, suffix, off, str) =>
+      formOk(m, stem, "(", gap, suffix, false, off, str)
+        ? plural(stem, off, str) : m);
+    R(reInParen, (m, stem, gap, suffix, off, str) =>
+      formOk(m, stem, "(", gap, suffix, true, off, str)
+        ? singular(stem, off, str) : m);
+    R(reArticlePair, (m, first, second) => {
+      const masc = PAIR_TO_MASC.get(first.toLowerCase() + "|" + second.toLowerCase());
+      return masc ? preserveCase(first, masc) : m;
+    });
+    R(reAdjNWithMarker,  (_, stem)     => stem + "n");
+    R(reAdjEWithMarker,  (_, stem)     => stem);
+    R(reAdjRWithMarker,  (_, stem)     => stem + "r");
+    R(reAdjErMWithMarker,(_, stem)     => stem + "em");
 
     // Substantivierte Partizipien (optional zuschaltbar). Nur großgeschrieben =
     // Substantiv ("die Studierenden"); kleingeschrieben ist es ein attributives
@@ -886,30 +1250,57 @@
     return out;
   }
 
-  async function normalizeGenderedTextAsync(text) {
-    if (!text) return text;
-    let tmp = text.replace(/[\u00AD\u200B\u200C\u200D]/g, "");
-    reAnyGenderPattern.lastIndex = 0;
-    if (!reAnyGenderPattern.test(tmp)) return text;
+  // Endungen, bei denen die Regeln Singular und Plural sicher treffen. Für eindeutige
+  // ("trusted") Formen mit solchen Stämmen lohnt kein Lookup ("Mieter:innen" → "Mieter").
+  const RULE_SAFE = /(?:er|el|ist|ent|ant|at|et|ot|ut|or|eur|ier|ar|är|ling|graf|graph|soph|nom|arch|log|gog)$/i;
 
+  // Sammelt die Stämme eines Textes, für die ein Wiktionary-Lookup etwas bringt: Stämme,
+  // die weder LEXICON noch Kompositum-Zerlegung kennen und die entweder eine unsichere
+  // Endung haben oder eine Personen-Prüfung brauchen (Binnen-I, Leerzeichen, Kompositum).
+  // Strukturell ausgeschlossene Treffer ("Termin: in Kürze") lösen keine Anfrage aus.
+  function collectLookupStems(text, into) {
+    const s = stripInvisibleInCandidates(text);
+    if (!hasGenderCandidate(s)) return into;
+    const confirmed = collectConfirmedStems(s, new Set());
+    // Ein Lookup liefert zweierlei: die Formen (wo die Regeln unsicher sind) und den
+    // Personenbeleg (für mehrdeutige Schreibweisen). Gefragt wird nur, wenn etwas fehlt.
+    // `evidence`: "trusted" (kein Beleg nötig), "person" oder "strict" (s. markerFormKind).
+    const consider = (stem, evidence) => {
+      const lower = stem.toLowerCase();
+      const inLexicon = LEXICON.has(lower);
+      const compound = !inLexicon && !!splitCompound(stem);
+      const formsKnown = inLexicon || compound || RULE_SAFE.test(lower);
+      const personKnown = evidence === "trusted" || inLexicon || isConfirmedStem(stem, confirmed) ||
+                          (evidence === "person" && compound) ||
+                          (evidence === "strict" && compound &&
+                           isKnownPerson(stem, isGenderingContext(confirmed)));
+      if (!formsKnown || !personKnown) into.add(lower);
+    };
+    const considerMarker = (m, marker, gap, suffix, singular) => {
+      const kind = markerFormKind(marker, gap, suffix, singular, s.slice(m.index + m[0].length));
+      if (kind !== "no") consider(m[1], kind);
+    };
+    for (const m of s.matchAll(reInnenCompound))   consider(m[1], "person");
+    for (const m of s.matchAll(reInnenWithMarker)) if (!/in$/i.test(m[1])) considerMarker(m, m[3], m[2] + m[4], m[5], false);
+    for (const m of s.matchAll(reInWithMarker))    considerMarker(m, m[3], m[2] + m[4], m[5], true);
+    for (const m of s.matchAll(reInnenParen))      considerMarker(m, "(", m[2], m[3], false);
+    for (const m of s.matchAll(reInParen))         considerMarker(m, "(", m[2], m[3], true);
+    for (const m of s.matchAll(reInSlashInnen))    consider(m[1], "trusted");
+    for (const m of s.matchAll(reBinnenIPlural))   consider(m[1], "person");
+    for (const m of s.matchAll(reBinnenISingular)) consider(m[1], "person");
+    return into;
+  }
+
+  // Lädt für eine Reihe von Texten alle benötigten Wörter – erst aus dem lokalen
+  // Cache, dann (gedrosselt) von Wiktionary. Danach laufen die Texte synchron durch.
+  async function prefetchLookups(texts) {
+    if (!HAS_BROWSER || !wiktionaryEnabled) return;
     const stems = new Set();
-    const collect = (_, stem) => { if (stem) stems.add(stem.toLowerCase()); return _; };
-    [reInnenCompound, reInnenWithMarker, reInWithMarker, reInnenParen, reInParen,
-     reBinnenIPlural, reBinnenISingular, reInSlashInnen].forEach(re => {
-      re.lastIndex = 0;
-      tmp.replace(re, collect);
-      re.lastIndex = 0;
-    });
-
-    await Promise.all([...stems].filter(Boolean).map(async s => {
-      if (wiktCache.has(s)) return;
-      // Kuratierte LEXICON-Stämme nicht abfragen: spart Requests und verhindert,
-      // dass ein gleichlautendes Fremdwort (z. B. "Kolleg") in den Cache gerät.
-      if (LEXICON.has(s)) return;
-      await fetchWiktionaryForms(s[0].toUpperCase() + s.slice(1));
-    }));
-
-    return normalizeGenderedText(text);
+    for (const t of texts) if (t) collectLookupStems(t, stems);
+    if (!stems.size) return;
+    const keys = [...stems];
+    await loadWiktFromStore(keys);
+    await Promise.all(keys.filter(k => !wiktCache.has(k)).map(fetchWiktionaryForms));
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -918,22 +1309,45 @@
 
   const processed = new WeakSet();
 
+  // Gilt für den Erstdurchlauf UND für Knoten aus dem MutationObserver – Text, der
+  // nachträglich in Code-Blöcke gestreamt wird (KI-Chats), bleibt so ebenfalls unberührt.
+  function acceptTextNode(node) {
+    if (!node.nodeValue?.trim()) return false;
+    const p = node.parentNode;
+    if (!p || p.nodeType !== Node.ELEMENT_NODE) return true;
+    if (p.closest(SKIP_SELECTOR)) return false;
+    return !isEditableNode(node);
+  }
+
   const walkerFilter = {
-    acceptNode(node) {
-      if (!node.nodeValue?.trim()) return NodeFilter.FILTER_REJECT;
-      const p = node.parentNode;
-      if (!p || p.nodeType !== Node.ELEMENT_NODE) return NodeFilter.FILTER_ACCEPT;
-      if (NON_TEXT_PARENTS.has(p.nodeName)) return NodeFilter.FILTER_REJECT;
-      if (isEditableNode(node)) return NodeFilter.FILTER_REJECT;
-      return NodeFilter.FILTER_ACCEPT;
-    },
+    acceptNode: node => acceptTextNode(node) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT,
   };
 
+  function collectPageStemsFrom(text) {
+    const s = stripInvisibleInCandidates(text);
+    if (hasGenderCandidate(s)) collectConfirmedStems(s, pageStems);
+  }
+
+  // Vorab-Scan der ganzen Seite, BEVOR Text ersetzt wird: So profitiert auch ein
+  // "Maurer: innen" oben auf der Seite von einem "Maurer:innen" weiter unten.
+  function collectPageStems(root) {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, walkerFilter);
+    let node;
+    while ((node = walker.nextNode())) collectPageStemsFrom(node.nodeValue);
+  }
+
   async function processBatch(nodes) {
-    for (const node of nodes) {
-      if (!node.isConnected || processed.has(node)) continue;
-      const original = node.nodeValue;
-      const replaced = await normalizeGenderedTextAsync(original);
+    const todo = nodes.filter(n => n.isConnected && !processed.has(n) && acceptTextNode(n));
+    if (!todo.length) return;
+    const originals = todo.map(n => n.nodeValue);
+    originals.forEach(collectPageStemsFrom);     // nachgeladene Inhalte ergänzen die Belege
+    await prefetchLookups(originals);
+    todo.forEach((node, i) => {
+      const original = originals[i];
+      // Seit dem Lookup geändert (z. B. React-Rerender)? Dann nicht mit veraltetem Text
+      // überschreiben – die Änderung erreicht uns ohnehin über den Observer.
+      if (!active || !node.isConnected || node.nodeValue !== original) return;
+      const replaced = normalizeGenderedText(original);
       if (replaced !== original) {
         node.nodeValue = replaced;
         if (debugEnabled) {
@@ -941,16 +1355,16 @@
         }
       }
       processed.add(node);
-    }
+    });
   }
 
   async function replaceGenderedLanguageInDOM(root) {
     if (!root) root = document.documentElement;
     normalizeSplitMarkers(root);
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, walkerFilter);
-    const CHUNK = 60;
+    const CHUNK = 150;
     let batch = [], node;
-    while ((node = walker.nextNode())) {
+    while (active && (node = walker.nextNode())) {
       if (processed.has(node)) continue;
       batch.push(node);
       if (batch.length >= CHUNK) {
@@ -970,14 +1384,14 @@
 
   function normalizeSplitMarkersInElement(element) {
     if (!element?.childNodes || element.childNodes.length < 2) return;
-    if (element.nodeType === Node.ELEMENT_NODE && NON_TEXT_PARENTS.has(element.nodeName)) return;
+    if (element.nodeType === Node.ELEMENT_NODE && element.closest(SKIP_SELECTOR)) return;
     if (isEditableNode(element)) return;
 
     const getInline = node => {
       if (!node) return null;
       if (node.nodeType === Node.TEXT_NODE)
         return node.nodeValue ? { node, text: node.nodeValue } : null;
-      if (node.nodeType !== Node.ELEMENT_NODE || NON_TEXT_PARENTS.has(node.nodeName)) return null;
+      if (node.nodeType !== Node.ELEMENT_NODE || node.matches(SKIP_SELECTOR)) return null;
       if (node.childNodes.length === 1 && node.firstChild.nodeType === Node.TEXT_NODE) {
         const t = node.firstChild.nodeValue || "";
         return t ? { node: node.firstChild, text: t } : null;
@@ -1017,7 +1431,7 @@
 
     const addCandidate = el => {
       if (!el || el.nodeType !== Node.ELEMENT_NODE) return;
-      if (NON_TEXT_PARENTS.has(el.nodeName)) return;
+      if (el.closest(SKIP_SELECTOR)) return;
       candidates.add(el);
     };
 
@@ -1072,12 +1486,17 @@
 
   const JSON_LD_SKIP = new Set(["@id","url","sameAs","contentUrl","embedUrl","thumbnailUrl"]);
 
-  function normalizeJsonLdValue(v, k) {
-    if (typeof v === "string") return (k && JSON_LD_SKIP.has(k)) ? v : normalizeGenderedText(v);
-    if (Array.isArray(v)) return v.map(e => normalizeJsonLdValue(e));
+  function normalizeJsonLdValue(v, k, state) {
+    if (typeof v === "string") {
+      if (k && JSON_LD_SKIP.has(k)) return v;
+      const r = normalizeGenderedText(v);
+      if (r !== v) state.changed = true;
+      return r;
+    }
+    if (Array.isArray(v)) return v.map(e => normalizeJsonLdValue(e, undefined, state));
     if (v && typeof v === "object") {
       const out = {};
-      for (const [ck, cv] of Object.entries(v)) out[ck] = normalizeJsonLdValue(cv, ck);
+      for (const [ck, cv] of Object.entries(v)) out[ck] = normalizeJsonLdValue(cv, ck, state);
       return out;
     }
     return v;
@@ -1089,8 +1508,11 @@
       const orig = s.textContent;
       if (!orig?.trim()) return;
       try {
-        const r = JSON.stringify(normalizeJsonLdValue(JSON.parse(orig)));
-        if (r !== orig) s.textContent = r;
+        // Nur zurückschreiben, wenn sich ein Text geändert hat – sonst würde jedes
+        // formatierte JSON-LD ohne Grund kompaktiert (und der Head-Observer erneut ausgelöst).
+        const state = { changed: false };
+        const value = normalizeJsonLdValue(JSON.parse(orig), undefined, state);
+        if (state.changed) s.textContent = JSON.stringify(value);
       } catch {}
     });
   }
@@ -1110,13 +1532,18 @@
 
   function normalizeShadowDom(root) {
     const proc = el => {
-      if (el?.shadowRoot) {
-        replaceGenderedLanguageInDOM(el.shadowRoot);
-        normalizeAllAttributes(el.shadowRoot);
-        normalizeSvgText(el.shadowRoot);
-        normalizeJsonLdScripts(el.shadowRoot);
-        el.shadowRoot.querySelectorAll("*").forEach(proc);
+      const shadow = el?.shadowRoot;
+      if (!shadow) return;
+      replaceGenderedLanguageInDOM(shadow);
+      normalizeAllAttributes(shadow);
+      normalizeSvgText(shadow);
+      normalizeJsonLdScripts(shadow);
+      // Auch nachgeladene Inhalte im Shadow DOM erfassen (Observer reichen nicht hinein).
+      if (!observedRoots.has(shadow)) {
+        observedRoots.add(shadow);
+        observeGenderedLanguage(shadow);
       }
+      shadow.querySelectorAll("*").forEach(proc);
     };
     if (root?.nodeType === Node.ELEMENT_NODE) proc(root);
     try { root?.querySelectorAll?.("*").forEach(proc); } catch {}
@@ -1125,6 +1552,9 @@
   // ─────────────────────────────────────────────────────────────
   // 11. MUTATIONOBSERVER (debounced)
   // ─────────────────────────────────────────────────────────────
+
+  const observers = [];                 // alle aktiven Observer – stop() trennt sie
+  let observedRoots = new WeakSet();    // Shadow Roots mit eigenem Observer
 
   function observeGenderedLanguage(root) {
     if (!root?.ownerDocument) return;
@@ -1143,7 +1573,7 @@
 
     const flush = () => {
       rafId = null;
-      if (isFlushing) return;
+      if (isFlushing || !active) return;
 
       for (const el of pendingAttrs) {
         if (!isEditableNode(el)) normalizeElementAttributes(el);
@@ -1160,6 +1590,7 @@
       (async () => {
         if (texts.length) await processBatch(texts);
         for (const el of elems) {
+          if (!active) break;
           await replaceGenderedLanguageInDOM(el);
           normalizeAllAttributes(el);
           normalizeSvgText(el);
@@ -1189,8 +1620,7 @@
           if (processed.has(m.target)) {
             // Text wurde extern geändert (z.B. React-Hydration) –
             // erneut prüfen ob Gendering vorhanden
-            reAnyGenderPattern.lastIndex = 0;
-            if (reAnyGenderPattern.test(m.target.nodeValue || "")) {
+            if (hasGenderCandidate(m.target.nodeValue || "")) {
               processed.delete(m.target);
               pendingText.add(m.target);
             }
@@ -1212,35 +1642,62 @@
       childList: true, subtree: true, attributes: true,
       attributeFilter: NORMALIZABLE_ATTRIBUTES, characterData: true,
     });
+    observers.push(observer);
   }
 
   function observeHeadChanges(doc = document) {
     if (!doc?.head) return;
-    new MutationObserver(() => {
+    // Gebündelt: Werbe-/Tracking-Skripte ändern den <head> oft dutzendfach pro Sekunde.
+    let queued = false;
+    const run = () => {
+      queued = false;
+      if (!active) return;
       normalizeDocumentTitle(doc);
       normalizeMetaTags(doc);
       normalizeJsonLdScripts(doc);
-    }).observe(doc.head, {
+    };
+    const observer = new MutationObserver(() => {
+      if (!queued) { queued = true; setTimeout(run, 50); }
+    });
+    observer.observe(doc.head, {
       childList: true, subtree: true, attributes: true, characterData: true,
       attributeFilter: ["content"],
     });
+    observers.push(observer);
   }
 
   // ─────────────────────────────────────────────────────────────
-  // 12. INIT (wird nach Config-Laden aufgerufen)
+  // 12. START / STOP / INIT (wird nach Config-Laden aufgerufen)
   // ─────────────────────────────────────────────────────────────
+
+  function start() {
+    if (active) return;
+    active = true;
+    init().catch(err => debug("Fehler bei der Verarbeitung:", err));
+  }
+
+  function stop() {
+    active = false;
+    observers.splice(0).forEach(o => o.disconnect());
+    observedRoots = new WeakSet();
+    pageStems.clear();
+  }
 
   async function init() {
     const root = document.documentElement;
-    await replaceGenderedLanguageInDOM(root);
-    normalizeAllAttributes(root);
-    normalizeSvgText(root);
-    normalizeShadowDom(root);
+    if (!root) return;
+    // Observer zuerst: Was die Seite während des (asynchronen) Erstdurchlaufs nachlädt
+    // oder ändert, geht so nicht verloren.
+    observeGenderedLanguage(root);
+    observeHeadChanges();
+    collectPageStems(root);
     normalizeDocumentTitle();
     normalizeMetaTags();
     normalizeJsonLdScripts();
-    observeGenderedLanguage(root);
-    observeHeadChanges();
+    normalizeAllAttributes(root);
+    normalizeSvgText(root);
+    normalizeShadowDom(root);
+    await replaceGenderedLanguageInDOM(root);
     debug("NoGender v" + VERSION + " aktiv auf:", location.hostname);
   }
 
@@ -1248,14 +1705,18 @@
   // im Browser-Content-Script ist `module` undefiniert und dieser Block inaktiv).
   if (typeof module !== "undefined" && module.exports) {
     module.exports = {
-      VERSION,
       LEXICON,
       PSEUDO_FEM,
       PARTICIPLE,
       FALSE_POSITIVES,
-      reAnyGenderPattern,
+      wiktCache,
+      hasGenderCandidate,
+      applyPatterns,
+      collectLookupStems,
+      parseWiktionaryFlexion,
       preserveCase,
       toPlural,
+      toSingular,
       splitCompound,
       resolveForm,
       replaceStem,

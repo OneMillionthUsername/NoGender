@@ -11,24 +11,36 @@ korrekt aufzulösen (siehe [Datenschutz](#datenschutz)).
 
 ## Funktionsumfang
 
-- **Viele Marker**: `:`, `*`, `·`, `•`, `‧`, `∙`, `⋅`, `⋆`, `_`, `/`
-  (z. B. `Mieter:innen`, `Mieter*innen`, `Mieter_innen`).
+- **Viele Marker**: `:`, `*`, `·`, `•`, `‧`, `∙`, `⋅`, `⋆`, `_`, `/` sowie die
+  typografischen Varianten `∗`, `⁎`, `꞉`, `∶` (z. B. `Mieter:innen`, `Mieter*innen`, `Mieter_innen`).
 - **Singular & Plural**: `Ärzt:in` → `Ärztin`, `Ärzt:innen` → `Ärzte`.
 - **Binnen-I**: `LehrerInnen` → `Lehrer`, `BürgerIn` → `Bürger`.
 - **Klammerformen**: `Lehrer(innen)` → `Lehrer`, `Bürger(in)` → `Bürger`.
 - **Adjektiv-/Pronomenformen**: `jede:r` → `jeder`, `ein:e` → `ein`, `jeder:m` → `jedem`.
+- **Artikel-/Pronomenpaare**: `der*die Nutzer*in` → `der Nutzer`, `sie/er` → `er`,
+  `seine:ihre` → `seine`. Nach solchen Determinativen passt sich auch das Nomen an
+  (`jede:r Ärzt:in` → `jeder Arzt`).
 - **Dativ-Plural** (konservativ): `nach Förder:innen` → `nach Förderern`, `mit Lehrer:innen` → `mit Lehrern` (nur bei eindeutigem Auslöser, siehe [bekannte Einschränkungen](#bekannte-einschränkungen)).
 - **Artikel-Kongruenz im Singular**: `Die Kolleg:in` → `Der Kollege`, `Eine Mitarbeiter:in` → `Ein Mitarbeiter` (nur bei großgeschriebenem Determinativ am Satzanfang).
-- **Genus-Kürzel**: `Mitarbeiter (m/w/d)` → `Mitarbeiter`.
+- **Genus-Kürzel**: `Mitarbeiter (m/w/d)` → `Mitarbeiter`, ebenso `(m/f/d)`, `(w/m/x)`,
+  `(all genders)`, `(gn)`.
 - **Indefinitpronomen**: `mensch`/`frau` (als Ersatz für „man") → `man`.
 - **Komposita**: `Bewegungsaktivist*innen` → `Bewegungsaktivisten`,
   `Lehrer*Innenzimmer` → `Lehrerzimmer`.
 - **Lexikon + Wiktionary**: ein eingebautes Lexikon häufiger Personenbezeichnungen,
-  ergänzt um einen optionalen Wiktionary-Lookup für seltenere Wörter.
+  ergänzt um einen abschaltbaren Wiktionary-Lookup für seltenere Wörter.
 - **Vollständige Seitenabdeckung**: Textknoten, Attribute (`title`, `alt`, `aria-label`
   …), `<meta>`-Tags, Seitentitel, JSON-LD, SVG-Text und Shadow DOM. Dynamisch
   nachgeladene Inhalte werden über einen `MutationObserver` mitverarbeitet.
-- **Schont Eingaben**: `input`, `textarea` und `contenteditable` werden nie verändert.
+- **Schont Eingaben und Code**: `input`, `textarea` und `contenteditable` werden nie
+  verändert, ebenso Text in `pre`, `code`, `kbd` und `samp` – auch tief verschachtelt
+  (Syntax-Highlighting) und auch, wenn er nachträglich hineingestreamt wird (KI-Chats).
+- **Vorsichtig bei Mehrdeutigem**: `Termin: in zwei Wochen`, `Farbe: innen weiß` oder
+  `Tür (innen)` sind normales Deutsch und bleiben stehen. Formen mit Leerzeichen am
+  Marker (`Mieter: innen`) werden nur bei belegten Personenbezeichnungen ersetzt – Beleg
+  ist das Lexikon, Wiktionary oder dasselbe Wort kompakt gegendert irgendwo auf der
+  Seite (`Mieter:innen`). Großes „I“ direkt am Marker (`Mieter*Innen`) gilt als eindeutig,
+  außer nach `/` (`Außen/Innen`).
 
 ### Beispiele
 
@@ -61,22 +73,37 @@ npm start          # startet Firefox mit geladener Erweiterung (Live-Reload)
 
 Über das Symbol in der Symbolleiste öffnet sich das Popup:
 
-- **Ein/Aus-Schalter** für die gesamte Erweiterung.
+- **Ein/Aus-Schalter** für die gesamte Erweiterung. Beim Ausschalten wird nur der
+  sichtbare Tab neu geladen; Hintergrund-Tabs ändern ab sofort nichts mehr und zeigen
+  den Originaltext beim nächsten Laden (so gehen dort keine ungespeicherten Eingaben verloren).
+- **Partizip-Formen**: `Studierende` → `Studenten` usw. separat abschaltbar.
+- **Wiktionary-Lookup**: abschaltbar; dann arbeitet die Erweiterung ohne jede Netzanfrage
+  nur mit dem eingebauten Lexikon und den Pluralregeln.
 - **Ausschlussliste**: einzelne Domains von der Verarbeitung ausnehmen –
   entweder die aktuelle Seite per Klick oder eine Domain manuell hinzufügen.
 - **Debug-Modus**: protokolliert jede Ersetzung in der Browser-Konsole (F12).
 
 ## Funktionsweise (Kurzüberblick)
 
-1. Ein zusammengesetztes Vorfilter-Regex (`reAnyGenderPattern`) prüft schnell, ob ein
-   Textknoten überhaupt eine gegenderte Form enthält.
+1. Ein Vorfilter (`hasGenderCandidate`) prüft mit billigen, notwendigen Bedingungen
+   (Buchstabe + Marker + „in“, Binnen-I, „(m/…“ …), ob ein Textknoten überhaupt eine
+   gegenderte Form enthalten kann. Die allermeisten Knoten scheiden hier aus.
 2. Trifft das zu, laufen spezialisierte Regex-Muster (Singular, Plural, Binnen-I,
-   Klammern, Adjektivformen …) nacheinander über den Text.
-3. Der erkannte **Wortstamm** wird aufgelöst – zuerst über den Wiktionary-Cache, dann
-   über das eingebaute `LEXICON`, zuletzt über regelbasierte Pluralbildung.
+   Klammern, Adjektivformen, Artikelpaare …) nacheinander über den Text.
+   Kompakte Formen (`Lehrer:innen`) gelten als eindeutig; mit Leerzeichen oder großem
+   „I“ braucht es einen Beleg, dass der Stamm eine Personenbezeichnung ist
+   (`markerFormKind`).
+3. Der erkannte **Wortstamm** wird aufgelöst – zuerst über das eingebaute, maßgebliche
+   `LEXICON`, dann über den Wiktionary-Cache, zuletzt über regelbasierte
+   Plural-/Singularbildung (`toPlural`, `toSingular`).
 4. **Komposita** werden vom Wortende her am längsten passenden Stamm zerlegt
    (`Sozialarbeiter` → `Sozial` + `arbeiter`).
 5. Groß-/Kleinschreibung des Originals wird übernommen (`preserveCase`).
+
+Bevor ein Block von Textknoten verarbeitet wird, sammelt `collectLookupStems` die Stämme,
+die sich lokal nicht auflösen lassen, und lädt sie gebündelt aus dem Cache bzw. von
+Wiktionary. Als Personenbeleg zählt dort der Abschnitt „Weibliche Wortformen“ – dass ein
+Wort ein Substantiv ist („Termin“, „Farbe“), genügt nicht.
 
 Der gesamte relevante Code steckt in [`nogender.js`](nogender.js); das Popup in
 [`popup.html`](popup.html)/[`popup.js`](popup.js).
@@ -98,6 +125,9 @@ Normalisierungslogik. Im Browser-Kontext bootet die Datei wie gewohnt; unter Nod
 exportiert sie ihre reinen Funktionen (per `module.exports`), ohne Browser-APIs
 anzufassen.
 
+Die Versionsnummer steht nur in `manifest.json` (Popup und Content-Script lesen sie von
+dort) und in `package.json`; ein Test prüft, dass beide übereinstimmen.
+
 ### Projektstruktur
 
 ```
@@ -114,9 +144,14 @@ CHANGELOG.md       Versionshistorie
 - Es werden **keine** personenbezogenen Daten erhoben, gespeichert oder übertragen.
 - Einstellungen liegen ausschließlich lokal in `browser.storage.local`.
 - Die **einzige** ausgehende Anfrage geht an die öffentliche API von
-  `de.wiktionary.org`, um Beugungsformen unbekannter Wörter nachzuschlagen.
-  Übertragen wird dabei nur das nachzuschlagende Wort (kein Bezug zur besuchten Seite).
-  Ergebnisse werden für die Sitzung zwischengespeichert.
+  `de.wiktionary.org`, um Beugungsformen unbekannter Wörter nachzuschlagen – und nur,
+  wenn Lexikon und Regeln nicht ausreichen. Übertragen wird dabei nur das
+  nachzuschlagende Wort: ohne Cookies und ohne Referer, also ohne Bezug zur besuchten
+  Seite. Der Lookup lässt sich im Popup abschalten.
+- Ergebnisse werden 30 Tage im Speicher der Erweiterung (`browser.storage.local`)
+  zwischengespeichert. Webseiten können diesen Cache nicht lesen.
+- Berechtigungen: `storage` für Einstellungen und Cache, `activeTab` für die Domain des
+  aktuellen Tabs im Popup („aktuelle Seite ausschließen“) – nur solange das Popup offen ist.
 
 ## Mitwirken
 
@@ -124,7 +159,9 @@ Beiträge sind willkommen. Für den Einstieg eignen sich besonders:
 
 - **Lexikon erweitern**: weitere Personenbezeichnungen in `LEXICON` ergänzen. Wichtig:
   Schlüssel ist immer der **gegenderte Stamm** (ohne End-`e`), z. B. `kolleg` für
-  „Kollege"/„Kolleg:innen", nicht `kollege`.
+  „Kollege"/„Kolleg:innen", nicht `kollege`. Optional: `m` für das Maskulinum, wenn
+  `sg` feminin ist (`ärzt`: `sg:"Ärztin"`, `m:"Arzt"`), und `exact: true`, wenn der
+  Stamm nicht als Kompositum-Kopf gelten darf (`zeug` – sonst wäre „Fahrzeug“ eine Person).
 
 Bitte vor einem Pull Request `npm test` und `npm run lint` ausführen und neue Fälle
 mit Tests absichern.
@@ -142,8 +179,15 @@ mit Tests absichern.
   (`Die Kolleg:in` → `Der Kollege`). Kleingeschrieben mitten im Satz (`die Kolleg:in`,
   mehrdeutig Nom./Akk.) bleibt der Artikel unverändert; ein dazwischenstehendes Adjektiv
   (`Die neue Kolleg:in`) wird nicht mitdekliniert.
-- **`mensch`/`frau` → `man`**: nur kleingeschrieben; durchgängig kleingeschriebenes
-  `frau` im Substantiv-Sinn kann fälschlich mit-ersetzt werden.
+- **`mensch`/`frau` → `man`**: nur kleingeschrieben und nicht nach einem Determinativ
+  (`jeder mensch`, `meine frau` bleiben). Nach einem Adjektiv (`junge frau`) kann das
+  Substantiv in durchgängig kleingeschriebenen Texten noch fälschlich ersetzt werden.
+- **Formen mit Leerzeichen am Marker** (`Maurer: innen`) und großem „I“ nach `/`
+  (`Maurer/Innen`) brauchen einen Personenbeleg: Lexikon, Wiktionary oder dasselbe Wort
+  kompakt gegendert auf derselben Seite. Steht so ein Wort allein und ist der Lookup
+  abgeschaltet, bleibt es stehen.
+- **Pluralregeln** sind Faustregeln: seltene Ausnahmen (z. B. `Barbar:innen` →
+  `Barbare` statt `Barbaren`) löst nur Wiktionary richtig auf.
 
 ## Lizenz
 
