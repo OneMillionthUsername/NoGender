@@ -1,4 +1,18 @@
 # Changelog
+## 3.1.1 (2026-10-03)
+
+Fehlerbehebungen nach einem Test am Forum von derstandard.at. Keine neuen Funktionen, deshalb ein Patch-Sprung.
+
+### Fehlerbehebungen
+- **Später geladene Web Components blieben unbearbeitet** (gemeldet: Forum-Hinweis „Liebe User:innen …" auf derstandard.at): Forum, Kopfzeile und Postings sind dort Web Components (Lit) mit Shadow DOM, deren Code als Modul-Skript erst nach dem Start von NoGender lädt. Beim „Upgrade" bekommen sie ihren Shadow Root – ohne Mutation, die der Observer sähe, also wurde ihr Inhalt nie verarbeitet, auch nicht in verschachtelten Komponenten. Noch undefinierte Elemente (`:not(:defined)`) werden jetzt gemerkt und nach dem Upgrade verarbeitet und beobachtet. Geprüft wird zunächst alle 250 ms, ohne Anlass seltener bis alle 2 s; Scrollen, Klicks und DOM-Änderungen machen die Prüfung wieder schnell. Am Artikel blieben vorher sechs Formen stehen („User:innen", „Mitarbeiter:innen", „Österreicher:innen", „Benutzer:innen", „Mitposter:innen"), jetzt keine.
+- **Geschlossene Shadow Roots** (`attachShadow({ mode: "closed" })`) wurden übersprungen, weil `el.shadowRoot` dort `null` ist. Jetzt über `openOrClosedShadowRoot`, das Firefox Content-Scripts bereitstellt.
+- **„Politikern/innen" → „Politikernen"**: Steht das Wort vor dem Marker schon im Dativ Plural („von Politikern/innen", „mit Lehrern/innen", „Bauern/innen"), hängte die Pluralregel ein weiteres „-en" an. Jetzt → „Politikern", „Lehrern", „Bauern"; solche Stämme lösen auch keinen Wiktionary-Lookup mehr aus (gefunden in einem Posting auf derstandard.at).
+
+### Wartung
+- **Tests**: 1 neuer Testfall (100 insgesamt). Das Shadow-DOM-Verhalten ist an einem Nachbau mit echten Lit-Komponenten (nachgeladen, verschachtelt, offen und geschlossen, Neu-Rendern) und am echten Artikel im Headless-Browser geprüft.
+
+---
+
 ## 3.1.0 (2026-10-03)
 
 Doppelnennungen werden auf das Maskulinum gekürzt. Neue Funktion, deshalb ein Minor-Sprung.
@@ -14,13 +28,8 @@ Doppelnennungen werden auf das Maskulinum gekürzt. Neue Funktion, deshalb ein M
 - **Ausschlussgruppe**: Gekürzt wird nur, wenn das andere Glied nachweislich das Maskulinum zum selben Wort ist. Unverändert bleiben Doppelnennungen, in denen beide Formen Information tragen oder die Kürzung grammatisch nicht sicher ist: Zahlen und Mengen („40 Lehrerinnen und 60 Lehrer", „rund 40 Lehrerinnen und Lehrer"), Vergleich, Anteile und Geschlecht als Thema im selben Satz („Unterschiede zwischen Ärztinnen und Ärzten", „Anteil", „%", „Frauen", „weiblich", „Gleichberechtigung" – auch Texte über das Gendern selbst), Betonung, Auswahl und Zuordnung („sowohl … als auch", „entweder … oder", „egal ob", Fragen mit „oder", „Lehrerinnen bzw. Lehrer erhalten 100 bzw. 200 Euro", „Ehepaare aus …"), Zitate und Sätze über Sprache („Die Paarform „Bürgerinnen und Bürger“"), ein Komma als Satzgrenze („Erst kamen die Lehrerinnen, Lehrer folgten später", „die Lehrerinnen, die Lehrer ausbilden"), zwei Personen im Singular („der Arzt und die Ärztin"), unpassende Beifügungen („die jungen Lehrerinnen und die alten Lehrer", „Lehrerinnen, nicht Lehrer"), ein feminines Wort vor dem Femininum („die Ärztin oder Arzt", „jeder und jede Lehrerin") und Singular ohne Artikel ohne Personenbeleg („Augustin oder August").
 - **Popup**: neuer Schalter „Doppelnennungen" (Standard: an). Umschalten lädt die sichtbare Seite neu.
 
-### Fehlerbehebungen
-- **Web Components blieben unbearbeitet** (gemeldet: Forum-Hinweis „Liebe User:innen …" auf derstandard.at, gebaut mit Lit) – am echten Artikel geprüft: vorher blieben im Forum u. a. „User:innen", „Mitarbeiter:innen", „Österreicher:innen" stehen, jetzt keine Form mehr: Lädt der Code einer Web Component erst nach dem Seitenstart (Lazy Loading, z. B. ein Forum am Artikelende), bekommt sie ihren Shadow Root beim „Upgrade" – ohne Mutation, die der Observer sähe. Ihr Inhalt wurde deshalb nie verarbeitet, auch nicht in verschachtelten Komponenten. Noch undefinierte Elemente (`:not(:defined)`) werden jetzt gemerkt und nach dem Upgrade verarbeitet und beobachtet; geprüft wird zunächst alle 250 ms, ohne Anlass seltener bis alle 2 s, nach Scrollen, Klicks und DOM-Änderungen wieder schnell.
-- **Geschlossene Shadow Roots** (`attachShadow({ mode: "closed" })`) wurden übersprungen, weil `el.shadowRoot` dort `null` ist. Jetzt über `openOrClosedShadowRoot`, das Firefox Content-Scripts bereitstellt.
-- **„Politikern/innen" → „Politikernen"**: Steht das Wort vor dem Marker schon im Dativ Plural („von Politikern/innen", „mit Lehrern/innen"), hängte die Pluralregel ein weiteres „-en" an. Jetzt → „Politikern", „Lehrern" (gefunden in einem Posting auf derstandard.at).
-
 ### Wartung
-- **Tests**: 20 neue Testfälle (100 insgesamt), darunter beide Reihenfolgen jeder Paarform, die Ausschlussgruppe, „Vorfilter für Doppelnennungen übersieht nichts" und „ein zweiter Durchlauf ändert nichts". „Liebe Gästinnen und Gäste" ergibt jetzt „Liebe Gäste".
+- **Tests**: 19 neue Testfälle (99 insgesamt), darunter beide Reihenfolgen jeder Paarform, die Ausschlussgruppe, „Vorfilter für Doppelnennungen übersieht nichts" und „ein zweiter Durchlauf ändert nichts". „Liebe Gästinnen und Gäste" ergibt jetzt „Liebe Gäste".
 - **Performance**: Doppelnennungen haben einen eigenen Vorfilter; die Sondermuster (Ergänzungsstrich, „jede") laufen nur, wenn ihr Kennzeichen im Text steht.
 
 ---
