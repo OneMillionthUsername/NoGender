@@ -96,7 +96,9 @@
 //   normalizeDocumentTitle / normalizeMetaTags           Seitentitel & <meta>-Tags.
 //   normalizeJsonLd*         Strukturierte Daten (JSON-LD) im <script>.
 //   normalizeSvgText         Text innerhalb von SVG-Grafiken.
-//   normalizeShadowDom       Web-Component-Bereiche (Shadow DOM), inkl. Observer.
+//   normalizeShadowDom       Web-Component-Bereiche (Shadow DOM, auch geschlossene), inkl. Observer.
+//   watchUndefinedHosts /    Web Components, deren Code erst später lädt: werden gemerkt und
+//     checkPendingHosts        nach dem Upgrade verarbeitet (sonst bliebe ihr Shadow DOM unbemerkt).
 //
 // ── OBSERVER (für dynamische Seiten) ───────────────────────────────────────
 //   observeGenderedLanguage  Reagiert auf nachträglich eingefügten/geänderten Inhalt (SPAs).
@@ -2000,9 +2002,15 @@
     } catch {}
   }
 
+  // Firefox gibt Content-Scripts über openOrClosedShadowRoot auch geschlossene Shadow Roots
+  // (attachShadow({ mode: "closed" })), die el.shadowRoot verbirgt.
+  function shadowRootOf(el) {
+    return el?.openOrClosedShadowRoot ?? el?.shadowRoot ?? null;
+  }
+
   function normalizeShadowDom(root) {
     const proc = el => {
-      const shadow = el?.shadowRoot;
+      const shadow = shadowRootOf(el);
       if (!shadow) return;
       replaceGenderedLanguageInDOM(shadow);
       normalizeAllAttributes(shadow);
@@ -2013,11 +2021,57 @@
         observedRoots.add(shadow);
         observeGenderedLanguage(shadow);
       }
+      watchUndefinedHosts(shadow);
       shadow.querySelectorAll("*").forEach(proc);
     };
     if (root?.nodeType === Node.ELEMENT_NODE) proc(root);
     try { root?.querySelectorAll?.("*").forEach(proc); } catch {}
+    if (root) watchUndefinedHosts(root);
   }
+
+  // Web Components, deren Code erst später lädt (Lazy Loading, Code-Splitting – etwa ein Forum
+  // am Artikelende), bekommen ihren Shadow Root erst beim "Upgrade". Das löst keine Mutation
+  // aus, die ein Observer sähe. Solche noch undefinierten Elemente (":not(:defined)") werden
+  // gemerkt und nachgeprüft, bis sie definiert sind; dann wird ihr Shadow DOM verarbeitet und
+  // beobachtet. Ohne Anlass wird die Prüfung seltener (bis alle 2 s); Scrollen, Klicks und
+  // DOM-Änderungen – die üblichen Auslöser fürs Nachladen – machen sie wieder schnell.
+  const PENDING_MIN_MS = 250, PENDING_MAX_MS = 2000;
+  const pendingHosts = new Set();
+  let pendingTimer = null;
+  let pendingDelay = PENDING_MIN_MS;
+
+  function watchUndefinedHosts(root) {
+    try {
+      if (root.nodeType === Node.ELEMENT_NODE && root.matches(":not(:defined)")) pendingHosts.add(root);
+      root.querySelectorAll(":not(:defined)").forEach(el => pendingHosts.add(el));
+    } catch {}
+    wakePendingCheck();
+  }
+
+  function wakePendingCheck() {
+    if (!pendingHosts.size || (pendingTimer && pendingDelay === PENDING_MIN_MS)) return;
+    clearTimeout(pendingTimer);
+    pendingDelay = PENDING_MIN_MS;
+    pendingTimer = setTimeout(checkPendingHosts, pendingDelay);
+  }
+
+  function checkPendingHosts() {
+    pendingTimer = null;
+    if (!active) return;
+    for (const el of pendingHosts) {
+      if (!el.isConnected) pendingHosts.delete(el);      // wird es neu eingefügt, meldet es der Observer
+      else if (el.matches(":defined")) {
+        pendingHosts.delete(el);
+        normalizeShadowDom(el);                          // kann verschachtelte Elemente nachmelden
+      }
+    }
+    if (!pendingHosts.size || pendingTimer) return;
+    pendingDelay = Math.min(pendingDelay * 2, PENDING_MAX_MS);
+    pendingTimer = setTimeout(checkPendingHosts, pendingDelay);
+  }
+
+  const WAKE_EVENTS = ["scroll", "click"];
+  const WAKE_OPTIONS = { capture: true, passive: true };
 
   // ─────────────────────────────────────────────────────────────
   // 12. MUTATIONOBSERVER (debounced)
@@ -2107,6 +2161,7 @@
         }
       }
       if (pendingText.size || pendingElems.size || pendingAttrs.size) schedule();
+      wakePendingCheck();
     });
 
     observer.observe(root, {
@@ -2152,6 +2207,10 @@
     observers.splice(0).forEach(o => o.disconnect());
     observedRoots = new WeakSet();
     pageStems.clear();
+    pendingHosts.clear();
+    clearTimeout(pendingTimer);
+    pendingTimer = null;
+    WAKE_EVENTS.forEach(type => window.removeEventListener(type, wakePendingCheck, WAKE_OPTIONS));
   }
 
   async function init() {
@@ -2161,6 +2220,7 @@
     // oder ändert, geht so nicht verloren.
     observeGenderedLanguage(root);
     observeHeadChanges();
+    WAKE_EVENTS.forEach(type => window.addEventListener(type, wakePendingCheck, WAKE_OPTIONS));
     collectPageStems(root);
     normalizeDocumentTitle();
     normalizeMetaTags();

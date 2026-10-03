@@ -40,8 +40,10 @@ korrekt aufzulösen (siehe [Datenschutz](#datenschutz)).
 - **Lexikon + Wiktionary**: ein eingebautes Lexikon häufiger Personenbezeichnungen,
   ergänzt um einen abschaltbaren Wiktionary-Lookup für seltenere Wörter.
 - **Vollständige Seitenabdeckung**: Textknoten, Attribute (`title`, `alt`, `aria-label`
-  …), `<meta>`-Tags, Seitentitel, JSON-LD, SVG-Text und Shadow DOM. Dynamisch
-  nachgeladene Inhalte werden über einen `MutationObserver` mitverarbeitet.
+  …), `<meta>`-Tags, Seitentitel, JSON-LD, SVG-Text und Shadow DOM – auch geschlossene
+  Shadow Roots und Web Components, deren Code erst später lädt (z. B. Kommentarbereiche
+  am Artikelende). Dynamisch nachgeladene Inhalte werden über einen `MutationObserver`
+  mitverarbeitet.
 - **Schont Eingaben und Code**: `input`, `textarea` und `contenteditable` werden nie
   verändert, ebenso Text in `pre`, `code`, `kbd` und `samp` – auch tief verschachtelt
   (Syntax-Highlighting) und auch, wenn er nachträglich hineingestreamt wird (KI-Chats).
