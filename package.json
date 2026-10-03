@@ -1,6 +1,6 @@
 {
   "name": "nogender",
-  "version": "3.1.0",
+  "version": "3.1.1",
   "description": "Firefox-Erweiterung, die künstlich gegenderte Formen auf Webseiten durch natürliches Deutsch ersetzt. Läuft lokal, mit optionalem Wiktionary-Lookup.",
   "private": true,
   "license": "GPL-3.0-or-later",
