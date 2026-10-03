@@ -170,6 +170,15 @@ test("Dativ-Regel: -n nur wenn nicht schon -n/-s", () => {
   expect("von Ärzt:innen", "von Ärzten");         // -e → -en
 });
 
+// Gekürzte Schreibung am schon gebeugten Wort (Posting auf derstandard.at): "Politikern/innen"
+// steht für "Politikern/Politikerinnen" – vorher wurde daraus "Politikernen".
+test("Stamm schon im Dativ Plural (-ern/-en vor dem Marker)", () => {
+  expect("eine große Zahl von Politikern/innen", "eine große Zahl von Politikern");
+  expect("mit Lehrern/innen", "mit Lehrern");
+  expect("eine Reihe von Ärzten/innen", "eine Reihe von Ärzten");
+  expect("Bauern/innen", "Bauern");
+});
+
 test("kein Dativ ohne eindeutigen Auslöser", () => {
   expect("Die Lehrer:innen streiken", "Die Lehrer streiken");        // Nominativ-Subjekt
   expect("für Lehrer:innen", "für Lehrer");                          // Akkusativ-Präposition

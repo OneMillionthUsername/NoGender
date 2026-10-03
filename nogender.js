@@ -603,7 +603,9 @@
     // Schwach deklinierte Fremdwörter (Fotografen, Philosophen, Ökonomen, Oligarchen,
     // Theologen, Pädagogen, Katholiken).
     if (/(?:graf|graph|soph|nom|arch|log|gog|ik)$/i.test(stem)) return stem + "en";
-    if (/(er|el|en|chen|lein)$/i.test(stem)) return stem;
+    // "-ern" ist schon Dativ Plural ("von Politikern/innen", "mit Lehrern/innen") bzw. Plural
+    // ("Bauern/innen") – kein weiteres "-en" anhängen.
+    if (/(er|ern|el|en|chen|lein)$/i.test(stem)) return stem;
     if (/e$/i.test(stem)) return stem + "n";
     if (/[tdnrsl]$/i.test(stem)) return stem + "en";
     return stem;
@@ -1274,7 +1276,7 @@
 
   // Endungen, bei denen die Regeln Singular und Plural sicher treffen. Für eindeutige
   // ("trusted") Formen mit solchen Stämmen lohnt kein Lookup ("Mieter:innen" → "Mieter").
-  const RULE_SAFE = /(?:er|el|ist|ent|ant|at|et|ot|ut|or|eur|ier|ar|är|ling|graf|graph|soph|nom|arch|log|gog)$/i;
+  const RULE_SAFE = /(?:er|ern|el|ist|ent|ant|at|et|ot|ut|or|eur|ier|ar|är|ling|graf|graph|soph|nom|arch|log|gog)$/i;
 
   // Sammelt die Stämme eines Textes, für die ein Wiktionary-Lookup etwas bringt: Stämme,
   // die weder LEXICON noch Kompositum-Zerlegung kennen und die entweder eine unsichere

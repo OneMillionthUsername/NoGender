@@ -15,11 +15,12 @@ Doppelnennungen werden auf das Maskulinum gekürzt. Neue Funktion, deshalb ein M
 - **Popup**: neuer Schalter „Doppelnennungen" (Standard: an). Umschalten lädt die sichtbare Seite neu.
 
 ### Fehlerbehebungen
-- **Web Components blieben unbearbeitet** (gemeldet: Forum-Hinweis „Liebe User:innen …" auf derstandard.at, gebaut mit Lit): Lädt der Code einer Web Component erst nach dem Seitenstart (Lazy Loading, z. B. ein Forum am Artikelende), bekommt sie ihren Shadow Root beim „Upgrade" – ohne Mutation, die der Observer sähe. Ihr Inhalt wurde deshalb nie verarbeitet, auch nicht in verschachtelten Komponenten. Noch undefinierte Elemente (`:not(:defined)`) werden jetzt gemerkt und nach dem Upgrade verarbeitet und beobachtet; geprüft wird zunächst alle 250 ms, ohne Anlass seltener bis alle 2 s, nach Scrollen, Klicks und DOM-Änderungen wieder schnell.
+- **Web Components blieben unbearbeitet** (gemeldet: Forum-Hinweis „Liebe User:innen …" auf derstandard.at, gebaut mit Lit) – am echten Artikel geprüft: vorher blieben im Forum u. a. „User:innen", „Mitarbeiter:innen", „Österreicher:innen" stehen, jetzt keine Form mehr: Lädt der Code einer Web Component erst nach dem Seitenstart (Lazy Loading, z. B. ein Forum am Artikelende), bekommt sie ihren Shadow Root beim „Upgrade" – ohne Mutation, die der Observer sähe. Ihr Inhalt wurde deshalb nie verarbeitet, auch nicht in verschachtelten Komponenten. Noch undefinierte Elemente (`:not(:defined)`) werden jetzt gemerkt und nach dem Upgrade verarbeitet und beobachtet; geprüft wird zunächst alle 250 ms, ohne Anlass seltener bis alle 2 s, nach Scrollen, Klicks und DOM-Änderungen wieder schnell.
 - **Geschlossene Shadow Roots** (`attachShadow({ mode: "closed" })`) wurden übersprungen, weil `el.shadowRoot` dort `null` ist. Jetzt über `openOrClosedShadowRoot`, das Firefox Content-Scripts bereitstellt.
+- **„Politikern/innen" → „Politikernen"**: Steht das Wort vor dem Marker schon im Dativ Plural („von Politikern/innen", „mit Lehrern/innen"), hängte die Pluralregel ein weiteres „-en" an. Jetzt → „Politikern", „Lehrern" (gefunden in einem Posting auf derstandard.at).
 
 ### Wartung
-- **Tests**: 19 neue Testfälle (99 insgesamt), darunter beide Reihenfolgen jeder Paarform, die Ausschlussgruppe, „Vorfilter für Doppelnennungen übersieht nichts" und „ein zweiter Durchlauf ändert nichts". „Liebe Gästinnen und Gäste" ergibt jetzt „Liebe Gäste".
+- **Tests**: 20 neue Testfälle (100 insgesamt), darunter beide Reihenfolgen jeder Paarform, die Ausschlussgruppe, „Vorfilter für Doppelnennungen übersieht nichts" und „ein zweiter Durchlauf ändert nichts". „Liebe Gästinnen und Gäste" ergibt jetzt „Liebe Gäste".
 - **Performance**: Doppelnennungen haben einen eigenen Vorfilter; die Sondermuster (Ergänzungsstrich, „jede") laufen nur, wenn ihr Kennzeichen im Text steht.
 
 ---
