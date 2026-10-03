@@ -1,7 +1,9 @@
 "use strict";
 
 // ── Zustand ───────────────────────────────────────────────────
-const DEFAULT = { enabled: true, blockedDomains: [], participles: true, wiktionary: true };
+const DEFAULT = {
+  enabled: true, blockedDomains: [], participles: true, doublets: true, wiktionary: true,
+};
 let cfg = { ...DEFAULT };
 let tabHost = null;
 let toastTimer = null;
@@ -60,8 +62,9 @@ function render() {
   badge.className  = "status-badge " + (cfg.enabled ? "on" : "off");
   text.textContent = cfg.enabled ? "Aktiv" : "Deaktiviert";
 
-  // Partizip- und Wiktionary-Toggle (Default an, falls nicht gesetzt)
+  // Partizip-, Doppelnennungs- und Wiktionary-Toggle (Default an, falls nicht gesetzt)
   document.getElementById("participlesToggle").checked = cfg.participles !== false;
+  document.getElementById("doubletsToggle").checked    = cfg.doublets !== false;
   document.getElementById("wiktionaryToggle").checked  = cfg.wiktionary !== false;
 
   // Domain-Liste
@@ -176,6 +179,15 @@ document.getElementById("participlesToggle").addEventListener("change", e => {
     e.target.checked
       ? "✓ Partizip-Formen werden ersetzt."
       : "Partizip-Formen bleiben unverändert."
+  );
+});
+
+document.getElementById("doubletsToggle").addEventListener("change", e => {
+  saveConfig(
+    { doublets: e.target.checked },
+    e.target.checked
+      ? "✓ Doppelnennungen werden gekürzt."
+      : "Doppelnennungen bleiben unverändert."
   );
 });
 

@@ -2,8 +2,9 @@
 
 Eine Firefox-Erweiterung, die **künstlich gegenderte Formen** auf Webseiten durch
 natürliches Deutsch ersetzt – z. B. `Ärzt:innen` → `Ärzte`, `Lehrer*innen` → `Lehrer`,
-`jede:r` → `jeder`. Natürliche Formen (`Ärztin`, `Lehrerinnen`, `meine Freundinnen`)
-bleiben **immer** unangetastet.
+`jede:r` → `jeder` – und **Doppelnennungen** kürzt: `Bürgerinnen und Bürger` → `Bürger`.
+Natürliche Formen (`Ärztin`, `Lehrerinnen`, `meine Freundinnen`) bleiben unangetastet;
+nur wo dieselbe Gruppe zusätzlich im Maskulinum genannt wird, entfällt die Dopplung.
 
 Die Erweiterung arbeitet vollständig lokal. Die einzige optionale Netzanfrage ist ein
 Lookup auf [de.wiktionary.org](https://de.wiktionary.org), um seltene Pluralformen
@@ -22,6 +23,15 @@ korrekt aufzulösen (siehe [Datenschutz](#datenschutz)).
   (`jede:r Ärzt:in` → `jeder Arzt`).
 - **Dativ-Plural** (konservativ): `nach Förder:innen` → `nach Förderern`, `mit Lehrer:innen` → `mit Lehrern` (nur bei eindeutigem Auslöser, siehe [bekannte Einschränkungen](#bekannte-einschränkungen)).
 - **Artikel-Kongruenz im Singular**: `Die Kolleg:in` → `Der Kollege`, `Eine Mitarbeiter:in` → `Ein Mitarbeiter` (nur bei großgeschriebenem Determinativ am Satzanfang).
+- **Doppelnennungen** (abschaltbar): `Bürgerinnen und Bürger` und `Bürger und Bürgerinnen`
+  → `Bürger` – die Reihenfolge spielt keine Rolle. Ebenso mit `oder`, `sowie`, `bzw.`, `/`,
+  `&` und Komma, im Dativ (`mit Lehrerinnen und Lehrern` → `mit Lehrern`), im Singular mit
+  Artikeln (`die Ärztin oder der Arzt` → `der Arzt`, `jede Schülerin und jeder Schüler` →
+  `jeder Schüler`), in Anreden (`Liebe Kolleginnen, liebe Kollegen` → `Liebe Kollegen`), mit
+  Ergänzungsstrich (`Kinderärztinnen und -ärzte` → `Kinderärzte`, `Bürgerinnen- und
+  Bürgerbeteiligung` → `Bürgerbeteiligung`) und als Pronomenpaar (`jede und jeder` → `jeder`).
+  Wo beide Formen Information tragen, bleibt der Text stehen (siehe
+  [Doppelnennungen](#doppelnennungen)).
 - **Genus-Kürzel**: `Mitarbeiter (m/w/d)` → `Mitarbeiter`, ebenso `(m/f/d)`, `(w/m/x)`,
   `(all genders)`, `(gn)`.
 - **Indefinitpronomen**: `mensch`/`frau` (als Ersatz für „man") → `man`.
@@ -51,6 +61,42 @@ korrekt aufzulösen (siehe [Datenschutz](#datenschutz)).
 | `jede:r Einzelne` | `jeder Einzelne` |
 | `die Sklav*innen` | `die Sklaven` |
 | `könnte mensch sagen` | `könnte man sagen` |
+| `Liebe Bürgerinnen und Bürger` | `Liebe Bürger` |
+| `mit Lehrern und Lehrerinnen` | `mit Lehrern` |
+| `Die Ärztin oder der Arzt entscheidet` | `Der Arzt entscheidet` |
+
+### Doppelnennungen
+
+Gekürzt wird auf das Maskulinum, und nur, wenn das andere Glied nachweislich das Maskulinum
+zum selben Wort ist (`Ärztinnen` ↔ `Ärzte`, `Bäuerinnen` ↔ `Bauern`). Es bleibt so stehen,
+wie es im Text steht, samt Kasus. `Lehrerinnen und Schüler` oder `Damen und Herren` sind
+keine Doppelnennungen.
+
+Im Zweifel bleibt der Text unverändert – lieber eine Doppelnennung zu viel als eine
+verfälschte Aussage. Diese **Ausschlussgruppe** wird nie gekürzt:
+
+- **Zahlen und Mengen**: `40 Lehrerinnen und 60 Lehrer`, `rund 40 Lehrerinnen und Lehrer`,
+  `Tausende Bürgerinnen und Bürger`, `Lehrerinnen und Lehrer (40 bzw. 60)`.
+- **Vergleich, Anteile, Geschlecht als Thema** im selben Satz: `Unterschiede zwischen
+  Ärztinnen und Ärzten`, `der Anteil der Professorinnen und Professoren`, Sätze mit
+  „Frauen", „Männer", „weiblich", „Geschlecht", „Gleichberechtigung", „%" usw. – auch Texte
+  über das Gendern selbst (`Doppelnennungen wie Bürgerinnen und Bürger`).
+- **Betonung, Auswahl, Zuordnung**: `sowohl … als auch`, `entweder … oder`, `egal ob
+  Lehrerin oder Lehrer`, Fragen mit „oder" (`Eher Lehrerinnen oder Lehrer?`), `Lehrerinnen
+  bzw. Lehrer erhalten 100 bzw. 200 Euro`, Paare (`Ehepaare aus Ärztinnen und Ärzten`).
+- **Zitat statt Verwendung**: `Die Paarform „Bürgerinnen und Bürger“`; ebenso Sätze über
+  Sprache („Schreibweise", „Formulierung", „Anrede", „sprachlich").
+- **Komma als Satzgrenze**: `Erst kamen die Lehrerinnen, Lehrer folgten später`,
+  `die Lehrerinnen, die Lehrer ausbilden`. Ein Komma zählt nur als Bindeglied, wenn das
+  zweite Glied eine Phrase abschließt (`Liebe Kolleginnen, liebe Kollegen,`).
+- **Zwei Personen im Singular**: `der Arzt und die Ärztin`, `ein Lehrer und eine Lehrerin`.
+  Im Singular wird nur bei „oder", „bzw." und „/" gekürzt, bei `jede … und jeder …` und in
+  Anreden (`Liebe Kollegin, lieber Kollege`).
+- **Unpassende Beifügungen**: `die jungen Lehrerinnen und die alten Lehrer`,
+  `Wir suchen Lehrerinnen, nicht Lehrer`, `der Arzt oder eine Ärztin`.
+- **Grammatik nicht sicher**: `die Ärztin oder Arzt` – der Artikel passt nicht zum Maskulinum.
+- **Singular ohne Artikel ohne Personenbeleg** (Lexikon, Wiktionary, Endung wie -er):
+  `Augustin oder August`.
 
 ## Installation
 
@@ -77,6 +123,7 @@ npm start          # startet Firefox mit geladener Erweiterung (Live-Reload)
   sichtbare Tab neu geladen; Hintergrund-Tabs ändern ab sofort nichts mehr und zeigen
   den Originaltext beim nächsten Laden (so gehen dort keine ungespeicherten Eingaben verloren).
 - **Partizip-Formen**: `Studierende` → `Studenten` usw. separat abschaltbar.
+- **Doppelnennungen**: `Bürgerinnen und Bürger` → `Bürger` usw. separat abschaltbar.
 - **Wiktionary-Lookup**: abschaltbar; dann arbeitet die Erweiterung ohne jede Netzanfrage
   nur mit dem eingebauten Lexikon und den Pluralregeln.
 - **Ausschlussliste**: einzelne Domains von der Verarbeitung ausnehmen –
@@ -99,6 +146,10 @@ npm start          # startet Firefox mit geladener Erweiterung (Live-Reload)
 4. **Komposita** werden vom Wortende her am längsten passenden Stamm zerlegt
    (`Sozialarbeiter` → `Sozial` + `arbeiter`).
 5. Groß-/Kleinschreibung des Originals wird übernommen (`preserveCase`).
+6. Zuletzt kürzt `collapseDoublets` Doppelnennungen – mit eigenem Vorfilter
+   (`hasDoubletCandidate`) und auf dem bereits normalisierten Text, sodass auch
+   `Lehrerinnen und Lehrende` zu `Lehrer` wird. `isMascCounterpart` prüft das Paar,
+   `isDoubletExcluded` und `singularDoubletOk` die Ausschlussgruppe.
 
 Bevor ein Block von Textknoten verarbeitet wird, sammelt `collectLookupStems` die Stämme,
 die sich lokal nicht auflösen lassen, und lädt sie gebündelt aus dem Cache bzw. von
@@ -188,6 +239,12 @@ mit Tests absichern.
   abgeschaltet, bleibt es stehen.
 - **Pluralregeln** sind Faustregeln: seltene Ausnahmen (z. B. `Barbar:innen` →
   `Barbare` statt `Barbaren`) löst nur Wiktionary richtig auf.
+- **Doppelnennungen** werden nur innerhalb eines Textknotens erkannt; verteilt sich eine
+  über mehrere HTML-Elemente (`<a>Bürgerinnen</a> und Bürger`), bleibt sie stehen. Paare
+  aus verschiedenen Wörtern (`Prinzessinnen und Prinzen`, `Kauffrauen und Kaufmänner`) und
+  Personalpronomen (`er oder sie`, `ihr bzw. sein`) werden nicht gekürzt. Steht vor einer
+  Aufzählung keine bekannte Personengruppe, entsteht eine Aufzählung ohne „und"
+  (`Apotheker, Ärztinnen und Ärzte` → `Apotheker, Ärzte`).
 
 ## Lizenz
 

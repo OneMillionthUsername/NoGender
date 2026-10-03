@@ -10,6 +10,7 @@ const ng = require("../nogender.js");
 
 const {
   normalizeGenderedText, applyPatterns, hasGenderCandidate, collectLookupStems,
+  collapseDoublets, hasDoubletCandidate,
   parseWiktionaryFlexion, splitCompound, toPlural, toSingular, wiktCache,
   LEXICON, PSEUDO_FEM, PARTICIPLE,
 } = ng;
@@ -278,11 +279,12 @@ test("Pseudo-Femininum MITTEN im Wort bleibt unangetastet", () => {
 });
 
 // Echte Feminina bezeichnen eine konkrete Frau und bleiben – auch seltene wie
-// "Gästin" (Wiktionary: selten) und "Vorständin" (Wirtschaftspresse).
+// "Gästin" (Wiktionary: selten) und "Vorständin" (Wirtschaftspresse). Nur in einer
+// Doppelnennung ("Liebe Gästinnen und Gäste") entfällt die Dopplung (s. u.).
 test("natürliche Feminina bleiben stehen", () => {
   for (const w of ["Freundin", "meine Freundin", "Die Freundin kam", "Freundinnen",
                    "Finanzvorständin", "Die Vorständin sprach", "Vorständinnen",
-                   "Gästin", "Stammgästin", "Liebe Gästinnen und Gäste",
+                   "Gästin", "Stammgästin", "Liebe Gästinnen",
                    "Ärztin", "Lehrerinnen", "Kollegin"]) {
     expect(w, w);
   }
@@ -388,6 +390,232 @@ test("Partizip – abschaltbar über Flag", () => {
   // Marker-Entgendern bleibt unabhängig vom Partizip-Flag aktiv:
   assert.equal(normalizeGenderedText("Lehrer:innen und Studierende", false),
                "Lehrer und Studierende");
+});
+
+// ─────────────────────────────────────────────────────────────
+// Doppelnennungen ("Bürgerinnen und Bürger" → "Bürger")
+// ─────────────────────────────────────────────────────────────
+const doubletInputs = [];
+function expectDoublet(input, output) {
+  doubletInputs.push(input);
+  expect(input, output);
+}
+
+test("Doppelnennung Plural – Reihenfolge egal", () => {
+  for (const [fem, masc] of [
+    ["Bürgerinnen", "Bürger"], ["Lehrerinnen", "Lehrer"], ["Ärztinnen", "Ärzte"],
+    ["Kolleginnen", "Kollegen"], ["Studentinnen", "Studenten"], ["Bäuerinnen", "Bauern"],
+    ["Jüdinnen", "Juden"], ["Französinnen", "Franzosen"], ["Zauberinnen", "Zauberer"],
+    ["Rätinnen", "Räte"], ["Gästinnen", "Gäste"],
+  ]) {
+    expectDoublet(`${fem} und ${masc}`, masc);
+    expectDoublet(`${masc} und ${fem}`, masc);
+  }
+});
+
+test("Doppelnennung – alle Bindewörter", () => {
+  for (const conn of [" und ", " oder ", " sowie ", " bzw. ", " beziehungsweise ",
+                      "/", " / ", " & ", ", "]) {
+    expectDoublet("Bürgerinnen" + conn + "Bürger", "Bürger");
+    expectDoublet("Bürger" + conn + "Bürgerinnen", "Bürger");
+  }
+});
+
+test("Doppelnennung – Kasus und Beifügungen bleiben wie im Text", () => {
+  expectDoublet("mit Lehrerinnen und Lehrern", "mit Lehrern");
+  expectDoublet("mit Lehrern und Lehrerinnen", "mit Lehrern");
+  expectDoublet("den Ärztinnen und Ärzten", "den Ärzten");
+  expectDoublet("die neuen Lehrerinnen und Lehrer", "die neuen Lehrer");
+  expectDoublet("alle Schülerinnen und Schüler", "alle Schüler");
+  expectDoublet("unsere Kundinnen und Kunden", "unsere Kunden");
+  expectDoublet("die Bürgerinnen und die Bürger", "die Bürger");
+  expectDoublet("Liebe Kolleginnen, liebe Kollegen", "Liebe Kollegen");
+  expectDoublet("Liebe Kollegen, liebe Kolleginnen", "Liebe Kollegen");
+  expectDoublet("Sehr geehrte Kundinnen, sehr geehrte Kunden", "Sehr geehrte Kunden");
+  expectDoublet("Liebe Gästinnen und Gäste", "Liebe Gäste");
+  expectDoublet("Sozialarbeiterinnen und Sozialarbeiter", "Sozialarbeiter");
+  expectDoublet("Nicht-Akademikerinnen und Nicht-Akademiker", "Nicht-Akademiker");
+  expectDoublet("LIEBE KOLLEGINNEN UND KOLLEGEN", "LIEBE KOLLEGEN");
+  expectDoublet("Schülerinnen und Schüler sowie Lehrerinnen und Lehrer", "Schüler sowie Lehrer");
+  expectDoublet("Was verdienen Lehrerinnen und Lehrer?", "Was verdienen Lehrer?");
+  expectDoublet("Am 3. Oktober sind alle Bürgerinnen und Bürger eingeladen",
+                "Am 3. Oktober sind alle Bürger eingeladen");
+  expectDoublet("Dr. Müller begrüßte die Bürgerinnen und Bürger.", "Dr. Müller begrüßte die Bürger.");
+  expectDoublet("Verantwortung gegenüber den Bürgerinnen und Bürgern",
+                "Verantwortung gegenüber den Bürgern");
+  expectDoublet("Schülerinnen und Schüler bzw. deren Eltern", "Schüler bzw. deren Eltern");
+  expectDoublet("„Liebe Bürgerinnen und Bürger“, sagte sie.", "„Liebe Bürger“, sagte sie.");
+});
+
+test("Doppelnennung in Aufzählungen", () => {
+  expectDoublet("Liebe Eltern, Schülerinnen und Schüler", "Liebe Eltern und Schüler");
+  expectDoublet("Liebe Eltern, Schüler und Schülerinnen", "Liebe Eltern und Schüler");
+  expectDoublet("Lehrerinnen, Lehrer, Erzieherinnen und Erzieher", "Lehrer und Erzieher");
+  expectDoublet("Ärztinnen, Ärzte und Pfleger", "Ärzte und Pfleger");
+  expectDoublet("Liebe Kolleginnen, liebe Kollegen, wir laden ein", "Liebe Kollegen, wir laden ein");
+  expectDoublet("Sehr geehrte Damen und Herren, liebe Kolleginnen und Kollegen",
+                "Sehr geehrte Damen und Herren, liebe Kollegen");
+  expectDoublet("Damen und Herren, Kolleginnen und Kollegen", "Damen und Herren, Kollegen");
+  expectDoublet("Vielen Dank, Kolleginnen und Kollegen", "Vielen Dank, Kollegen");  // Anrede, keine Liste
+  expectDoublet("Ja, Lehrerinnen und Lehrer sind wichtig", "Ja, Lehrer sind wichtig");
+});
+
+test("Doppelnennung nach Auflösung anderer Formen", () => {
+  expectDoublet("Lehrerinnen und Lehrende", "Lehrer");               // Partizip
+  expectDoublet("Schülerinnen und Schüler:innen", "Schüler");         // Marker
+});
+
+test("Doppelnennung Singular mit Artikeln und Adjektiven", () => {
+  expectDoublet("der Arzt oder die Ärztin", "der Arzt");
+  expectDoublet("die Ärztin oder der Arzt", "der Arzt");
+  expectDoublet("Die Ärztin oder der Arzt entscheidet", "Der Arzt entscheidet");
+  expectDoublet("eine Lehrerin oder ein Lehrer", "ein Lehrer");
+  expectDoublet("einen Lehrer oder eine Lehrerin", "einen Lehrer");
+  expectDoublet("mit der Ärztin oder dem Arzt", "mit dem Arzt");
+  expectDoublet("des Arztes oder der Ärztin", "des Arztes");
+  expectDoublet("zur Ärztin oder zum Arzt", "zum Arzt");
+  expectDoublet("Ihre Ärztin oder Ihr Arzt", "Ihr Arzt");
+  expectDoublet("jeder Arzt oder jede Ärztin", "jeder Arzt");
+  expectDoublet("die neue Kollegin oder der neue Kollege", "der neue Kollege");
+  expectDoublet("eine erfahrene Ärztin oder ein erfahrener Arzt", "ein erfahrener Arzt");
+  expectDoublet("Jede Schülerin und jeder Schüler", "Jeder Schüler");     // verteilend
+  expectDoublet("jeder Schüler und jede Schülerin", "jeder Schüler");
+  expectDoublet("Jede Bürgerin, jeder Bürger", "Jeder Bürger");
+  expectDoublet("Liebe Kollegin, lieber Kollege", "Lieber Kollege");      // Anrede
+  expectDoublet("Lieber Kollege, liebe Kollegin", "Lieber Kollege");
+  expectDoublet("Sehr geehrte Kundin, sehr geehrter Kunde", "Sehr geehrter Kunde");
+  expectDoublet("fragen Sie Ihre Ärztin, Ihren Arzt oder in Ihrer Apotheke",
+                "fragen Sie Ihren Arzt oder in Ihrer Apotheke");
+});
+
+test("Doppelnennung Singular ohne Artikel nur mit Personenbeleg", () => {
+  expectDoublet("Ärztin oder Arzt", "Arzt");
+  expectDoublet("Arzt/Ärztin", "Arzt");
+  expectDoublet("Bewerbung als Lehrerin oder Lehrer", "Bewerbung als Lehrer");
+  expectDoublet("Ansprechpartnerin/Ansprechpartner", "Ansprechpartner");
+  expectDoublet("Augustin oder August", "Augustin oder August");          // kein Beleg
+  expectDoublet("Termin oder Term", "Termin oder Term");
+  expectDoublet("Chirurgin oder Chirurg", "Chirurgin oder Chirurg");
+  withWikt({ chirurg: wiktPerson("Chirurg", "Chirurgen") }, () => {
+    expect("Chirurgin oder Chirurg", "Chirurg");
+  });
+});
+
+test("Doppelnennung mit Ergänzungsstrich", () => {
+  expectDoublet("Kinderärztinnen und -ärzte", "Kinderärzte");
+  expectDoublet("Kinderärzte und -ärztinnen", "Kinderärzte");
+  expectDoublet("Sozialarbeiterinnen und -arbeiter", "Sozialarbeiter");
+  expectDoublet("Kinderärztin oder -arzt", "Kinderarzt");
+  expectDoublet("Bürgerinnen- und Bürgerbeteiligung", "Bürgerbeteiligung");
+  expectDoublet("Bürger- und Bürgerinnenbeteiligung", "Bürgerbeteiligung");
+  expectDoublet("Schüler- und Schülerinnenvertretung", "Schülervertretung");
+  expectDoublet("Ärzte- und Ärztinnenkammer", "Ärztekammer");
+  expectDoublet("Studentinnen- und Studentenwerk", "Studentenwerk");
+  expectDoublet("Bürgerinnen- und Bürgerinitiativen", "Bürgerinitiativen");
+  expectDoublet("Kinderärztinnen, -ärzte und Apotheker", "Kinderärzte und Apotheker");
+});
+
+test("Doppelnennung als Pronomenpaar", () => {
+  expectDoublet("Jede und jeder ist willkommen", "Jeder ist willkommen");
+  expectDoublet("jeder und jede", "jeder");
+  expectDoublet("jede/jeder", "jeder");
+  expectDoublet("für jede und jeden", "für jeden");
+  expectDoublet("mit jeder und jedem", "mit jedem");
+  expectDoublet("jede und jeder Einzelne", "jeder Einzelne");
+  expectDoublet("jeder und jede Lehrerin", "jeder und jede Lehrerin");   // Nomen richtet sich nach "jede"
+});
+
+// Ausschlussgruppe: Hier trägt die Nennung beider Formen Information, oder die Kürzung
+// wäre grammatisch nicht sicher – der Text bleibt unverändert.
+test("Ausschlussgruppe: Zahlen und Mengen", () => {
+  for (const s of ["40 Lehrerinnen und 60 Lehrer", "4 Lehrerinnen und 4 Lehrer",
+                   "zwei Ärztinnen und drei Ärzte", "rund 40 Lehrerinnen und Lehrer",
+                   "Es kamen zwanzig Lehrerinnen und Lehrer",
+                   "Tausende Bürgerinnen und Bürger demonstrierten",
+                   "Lehrerinnen und Lehrer (40 bzw. 60)", "Lehrer und Lehrerinnen: 40 bzw. 60",
+                   "beide Lehrerinnen und beide Lehrer"]) {
+    expectDoublet(s, s);
+  }
+});
+
+test("Ausschlussgruppe: Vergleich, Anteile, Geschlecht als Thema", () => {
+  for (const s of ["Unterschiede zwischen Ärztinnen und Ärzten", "Ärztinnen und Ärzte im Vergleich",
+                   "Ärztinnen und Ärzte verdienen unterschiedlich viel",
+                   "das Verhältnis von Lehrerinnen und Lehrern",
+                   "Der Anteil der Professorinnen und Professoren steigt",
+                   "Rund 70 % der Lehrerinnen und Lehrer sind zufrieden",
+                   "Bei den Ärztinnen und Ärzten sind Frauen in der Mehrheit",
+                   "Gleichberechtigung für Bürgerinnen und Bürger",
+                   "Lehrerinnen und Lehrer verdienen gleich viel",
+                   "Ehepaare aus Ärztinnen und Ärzten",
+                   "Doppelnennungen wie Bürgerinnen und Bürger",
+                   "In der Anrede Kolleginnen und Kollegen"]) {
+    expectDoublet(s, s);
+  }
+});
+
+test("Ausschlussgruppe: Betonung, Einräumung, Auswahlfrage, Gegensatz", () => {
+  for (const s of ["sowohl Lehrerinnen und Lehrer als auch Eltern",
+                   "entweder die Ärztin oder der Arzt", "egal ob Lehrerin oder Lehrer",
+                   "Eher Lehrerinnen oder Lehrer?", "Wer kommt: die Ärztin oder der Arzt?",
+                   "Lehrerinnen oder Lehrer – wer verdient mehr?",
+                   "Wir suchen Lehrerinnen, nicht Lehrer", "nicht Lehrerinnen, sondern Lehrer",
+                   "Lehrerinnen und auch Lehrer", "Lehrerinnen und alle anderen Lehrer",
+                   "Ärztinnen oder Ärzte, z. B. in Kliniken?",
+                   "Lehrerinnen bzw. Lehrer erhalten 100 bzw. 200 Euro"]) {   // "bzw. … bzw." ordnet zu
+    expectDoublet(s, s);
+  }
+});
+
+test("Ausschlussgruppe: Komma als Satzgrenze, Relativsatz, Zitat", () => {
+  for (const s of ["Erst kamen die Lehrerinnen, Lehrer folgten später.",
+                   "die Lehrerinnen, die Lehrer ausbilden",
+                   "Ich kenne jede Bürgerin, jeder Bürger kennt mich",
+                   "Die Paarform „Bürgerinnen und Bürger“ ist verbreitet",
+                   "Man schreibt „Lehrerinnen und Lehrer“."]) {
+    expectDoublet(s, s);
+  }
+});
+
+test("Ausschlussgruppe: zwei Personen im Singular", () => {
+  for (const s of ["der Arzt und die Ärztin", "ein Lehrer und eine Lehrerin", "Arzt und Ärztin",
+                   "die Kollegin und der Kollege", "der Arzt, die Ärztin und der Pfleger",
+                   "Neue Kollegin, neuer Kollege", "Kinderärztin und -arzt"]) {
+    expectDoublet(s, s);
+  }
+});
+
+test("Ausschlussgruppe: unpassende oder fehlende Beifügungen", () => {
+  for (const s of ["die jungen Lehrerinnen und die alten Lehrer",
+                   "viele Lehrerinnen und wenige Lehrer",
+                   "weibliche Lehrerinnen und männliche Lehrer", "der Arzt oder eine Ärztin",
+                   "die Ärztin oder Arzt", "eine erfahrene Ärztin oder Arzt"]) {
+    expectDoublet(s, s);
+  }
+});
+
+test("keine Doppelnennung: verschiedene Wörter, Nicht-Personen, Komposita", () => {
+  for (const s of ["Lehrerinnen und Schüler", "Damen und Herren", "Frauen und Männer",
+                   "Kauffrauen und Kaufmänner", "meine Freundinnen und ich",
+                   "Spinnen und Spinner", "Berlin und Brandenburg",
+                   "Lehrerinnen und Lehrer-Verband", "Lehrerin/innen"]) {
+    expectDoublet(s, s);
+  }
+});
+
+test("Doppelnennungen – abschaltbar über Flag", () => {
+  assert.equal(normalizeGenderedText("Liebe Bürgerinnen und Bürger", true, false),
+               "Liebe Bürgerinnen und Bürger");
+  // Marker-Entgendern bleibt unabhängig vom Doppelnennungs-Flag aktiv:
+  assert.equal(normalizeGenderedText("Lehrer:innen sowie Bürgerinnen und Bürger", true, false),
+               "Lehrer sowie Bürgerinnen und Bürger");
+});
+
+test("Doppelnennungen – ein zweiter Durchlauf ändert nichts", () => {
+  for (const input of doubletInputs) {
+    const once = normalizeGenderedText(input);
+    assert.equal(normalizeGenderedText(once), once, input);
+  }
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -686,6 +914,10 @@ test("Vorfilter lässt gewöhnlichen Text durch", () => {
   for (const s of ["Er kommt aus Berlin.", "Das ist mein Termin.", "Die Frau lacht.",
                    "Ein Mensch.", "Wir sehen uns in fünf Minuten."]) {
     assert.equal(hasGenderCandidate(s), false, s);
+    assert.equal(hasDoubletCandidate(s), false, s);
+  }
+  for (const s of ["Er ist allein und müde.", "Wir gehen hinein, dann darin weiter."]) {
+    assert.equal(hasDoubletCandidate(s), false, s);             // kleingeschrieben: kein Nomen
   }
 });
 
@@ -724,6 +956,19 @@ test("Vorfilter übersieht nichts (alle Testeingaben)", () => {
   for (const input of seenInputs) {
     if (applyPatterns(input, true) !== input) {
       assert.ok(hasGenderCandidate(input), `Vorfilter übersieht: ${JSON.stringify(input)}`);
+    }
+  }
+});
+
+// Dasselbe für Doppelnennungen – geprüft am Rohtext und nach den übrigen Mustern, denn
+// normalizeGenderedText fragt den Vorfilter an beiden Stellen.
+test("Vorfilter für Doppelnennungen übersieht nichts (alle Testeingaben)", () => {
+  assert.ok(doubletInputs.length > 100);
+  for (const input of seenInputs) {
+    for (const text of [input, applyPatterns(input, true)]) {
+      if (collapseDoublets(text) !== text) {
+        assert.ok(hasDoubletCandidate(text), `Vorfilter übersieht: ${JSON.stringify(text)}`);
+      }
     }
   }
 });
