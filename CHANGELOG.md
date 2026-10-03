@@ -1,4 +1,25 @@
 # Changelog
+## 3.1.0 (2026-10-03)
+
+Doppelnennungen werden auf das Maskulinum gekürzt. Neue Funktion, deshalb ein Minor-Sprung.
+
+### Neue Funktionen
+- **Doppelnennungen** („Bürgerinnen und Bürger" → „Bürger"): unabhängig von der Reihenfolge („Bürger und Bürgerinnen" → „Bürger"), mit „und", „oder", „sowie", „bzw.", „beziehungsweise", „/", „&" und Komma. Das Maskulinum bleibt so stehen, wie es im Text steht – samt Kasus („mit Lehrerinnen und Lehrern" → „mit Lehrern") und mit Umlautwechsel („Ärztinnen und Ärzte", „Bäuerinnen und Bauern", „Jüdinnen und Juden"). Natürliche Feminina ohne maskulines Gegenstück bleiben wie bisher stehen. Außerdem:
+  - Singular mit Artikeln und Adjektiven: „die Ärztin oder der Arzt" → „der Arzt", „mit der Ärztin oder dem Arzt" → „mit dem Arzt", „eine erfahrene Ärztin oder ein erfahrener Arzt" → „ein erfahrener Arzt", „Jede Schülerin und jeder Schüler" → „Jeder Schüler".
+  - Anreden: „Liebe Kolleginnen, liebe Kollegen" → „Liebe Kollegen", „Liebe Kollegin, lieber Kollege" → „Lieber Kollege".
+  - Aufzählungen: „Liebe Eltern, Schülerinnen und Schüler" → „Liebe Eltern und Schüler".
+  - Ergänzungsstrich: „Kinderärztinnen und -ärzte" → „Kinderärzte", „Bürgerinnen- und Bürgerbeteiligung" → „Bürgerbeteiligung", „Schüler- und Schülerinnenvertretung" → „Schülervertretung".
+  - Pronomenpaare: „Jede und jeder" → „Jeder", „für jede und jeden" → „für jeden".
+  - Nach der Auflösung anderer Formen: „Lehrerinnen und Lehrende" → „Lehrer".
+- **Ausschlussgruppe**: Gekürzt wird nur, wenn das andere Glied nachweislich das Maskulinum zum selben Wort ist. Unverändert bleiben Doppelnennungen, in denen beide Formen Information tragen oder die Kürzung grammatisch nicht sicher ist: Zahlen und Mengen („40 Lehrerinnen und 60 Lehrer", „rund 40 Lehrerinnen und Lehrer"), Vergleich, Anteile und Geschlecht als Thema im selben Satz („Unterschiede zwischen Ärztinnen und Ärzten", „Anteil", „%", „Frauen", „weiblich", „Gleichberechtigung" – auch Texte über das Gendern selbst), Betonung, Auswahl und Zuordnung („sowohl … als auch", „entweder … oder", „egal ob", Fragen mit „oder", „Lehrerinnen bzw. Lehrer erhalten 100 bzw. 200 Euro", „Ehepaare aus …"), Zitate und Sätze über Sprache („Die Paarform „Bürgerinnen und Bürger“"), ein Komma als Satzgrenze („Erst kamen die Lehrerinnen, Lehrer folgten später", „die Lehrerinnen, die Lehrer ausbilden"), zwei Personen im Singular („der Arzt und die Ärztin"), unpassende Beifügungen („die jungen Lehrerinnen und die alten Lehrer", „Lehrerinnen, nicht Lehrer"), ein feminines Wort vor dem Femininum („die Ärztin oder Arzt", „jeder und jede Lehrerin") und Singular ohne Artikel ohne Personenbeleg („Augustin oder August").
+- **Popup**: neuer Schalter „Doppelnennungen" (Standard: an). Umschalten lädt die sichtbare Seite neu.
+
+### Wartung
+- **Tests**: 19 neue Testfälle (99 insgesamt), darunter beide Reihenfolgen jeder Paarform, die Ausschlussgruppe, „Vorfilter für Doppelnennungen übersieht nichts" und „ein zweiter Durchlauf ändert nichts". „Liebe Gästinnen und Gäste" ergibt jetzt „Liebe Gäste".
+- **Performance**: Doppelnennungen haben einen eigenen Vorfilter; die Sondermuster (Ergänzungsstrich, „jede") laufen nur, wenn ihr Kennzeichen im Text steht.
+
+---
+
 ## 3.0.0 (2026-09-26)
 
 Umfassende Überarbeitung nach einem Projekt-Review: Falschtreffer in normalem Text und in Code-Blöcken, gemischte Schreibweisen mit und ohne Leerzeichen, Datenschutz und Drosselung des Wiktionary-Lookups, Performance. Wegen des Umfangs ein Major-Sprung.

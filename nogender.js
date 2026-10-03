@@ -72,8 +72,18 @@
 //   hasGenderCandidate Vorfilter: billige notwendige Bedingungen aller Muster (vermeidet unnötige Arbeit).
 //
 // ── KERN-UMWANDLUNG ────────────────────────────────────────────────────────
-//   normalizeGenderedText Vorfilter + applyPatterns (synchron, ohne Netz).
+//   normalizeGenderedText Vorfilter + applyPatterns + collapseDoublets (synchron, ohne Netz).
 //   applyPatterns         Wendet alle Muster nacheinander auf einen Text an.
+//
+// ── DOPPELNENNUNGEN ────────────────────────────────────────────────────────
+//   collapseDoublets      Kürzt "Bürgerinnen und Bürger" / "Bürger und Bürgerinnen" auf
+//                         das Maskulinum, auch im Singular ("der Arzt oder die Ärztin"),
+//                         mit Ergänzungsstrich ("Kinderärztinnen und -ärzte") und als
+//                         Pronomenpaar ("jede und jeder").
+//   isMascCounterpart     Prüft, ob ein Glied das Maskulinum zum Femininum ist (Ärztin/Arzt).
+//   isDoubletExcluded /   Ausschlussgruppe: Zahlen, Vergleich, Geschlecht als Thema,
+//     singularDoubletOk     Auswahlfragen, zwei Personen im Singular, unpassende Beifügungen.
+//   hasDoubletCandidate   Vorfilter für Doppelnennungen.
 //
 // ── DOM-VERARBEITUNG ───────────────────────────────────────────────────────
 //   isEditableNode /         Schließen Eingabefelder (input/textarea/contenteditable) und
@@ -103,12 +113,14 @@
     enabled: true,
     blockedDomains: [],
     participles: true,   // Partizip-Substantive (Studierende → Studenten) zurückbauen
+    doublets: true,      // Doppelnennungen (Bürgerinnen und Bürger → Bürger) kürzen
     wiktionary: true,    // unbekannte Wörter bei de.wiktionary.org nachschlagen
   };
 
   let debugEnabled       = false;
   let active             = false;  // verarbeitet dieses Dokument gerade Text?
   let participlesEnabled = true;   // aus cfg.participles gesetzt; steuert den Partizip-Pass
+  let doubletsEnabled    = true;   // aus cfg.doublets gesetzt; steuert das Kürzen von Doppelnennungen
   let wiktionaryEnabled  = true;   // aus cfg.wiktionary gesetzt; steuert den Online-Lookup
 
   // Browser-APIs nur im Extension-Kontext ansprechen. Unter Node (Tests) fehlt
@@ -154,7 +166,9 @@
       const newCfg = { ...DEFAULT_CONFIG, ...(changes.nogender_config.newValue ?? {}) };
       wiktionaryEnabled = newCfg.wiktionary !== false;   // wirkt sofort, ohne Reload
       const participlesChanged = (newCfg.participles !== false) !== participlesEnabled;
+      const doubletsChanged    = (newCfg.doublets !== false) !== doubletsEnabled;
       participlesEnabled = newCfg.participles !== false;
+      doubletsEnabled    = newCfg.doublets !== false;
       const willBeActive = newCfg.enabled && !isBlockedDomain(newCfg);
 
       // Einschalten braucht keinen Reload – die Seite wird direkt verarbeitet.
@@ -170,8 +184,9 @@
         if (!document.hidden) location.reload();
         return;
       }
-      // Umschalten des Partizip-Features: sichtbare Seite neu (bzw. im Original) rendern.
-      if (participlesChanged && active && !document.hidden) {
+      // Umschalten des Partizip- oder Doppelnennungs-Features: sichtbare Seite neu (bzw. im
+      // Original) rendern.
+      if ((participlesChanged || doubletsChanged) && active && !document.hidden) {
         location.reload();
       }
     });
@@ -180,6 +195,7 @@
     browser.storage.local.get("nogender_config").then(result => {
       const cfg = { ...DEFAULT_CONFIG, ...(result.nogender_config ?? {}) };
       participlesEnabled = cfg.participles !== false;
+      doubletsEnabled    = cfg.doublets !== false;
       wiktionaryEnabled  = cfg.wiktionary !== false;
 
       if (!cfg.enabled || isBlockedDomain(cfg)) {
@@ -1128,20 +1144,25 @@
   const reInvisible      = new RegExp(INVISIBLE);
   const reInvisibleAll   = new RegExp(INVISIBLE, "g");
   const reInvisibleToken = new RegExp("\\S*" + INVISIBLE + "\\S*", "gu");
+  const reFemTokenEnd    = /\p{L}{3}in(?:nen)?(?![\p{L}])/u;   // "Bürger&shy;innen" (Doppelnennung)
 
-  function stripInvisibleInCandidates(text) {
+  function stripInvisibleInCandidates(text, doublets = false) {
     if (!reInvisible.test(text)) return text;
     return text.replace(reInvisibleToken, token => {
       const clean = token.replace(reInvisibleAll, "");
-      return hasGenderCandidate(clean) ? clean : token;
+      return hasGenderCandidate(clean) || (doublets && reFemTokenEnd.test(clean)) ? clean : token;
     });
   }
 
-  function normalizeGenderedText(text, participles = participlesEnabled) {
+  function normalizeGenderedText(text, participles = participlesEnabled, doublets = doubletsEnabled) {
     if (!text) return text;
-    const prepared = stripInvisibleInCandidates(text);
-    if (!hasGenderCandidate(prepared)) return text;
-    const out = applyPatterns(prepared, participles);
+    const prepared = stripInvisibleInCandidates(text, doublets);
+    const gendered = hasGenderCandidate(prepared);
+    if (!gendered && !(doublets && hasDoubletCandidate(prepared))) return text;
+    let out = gendered ? applyPatterns(prepared, participles) : prepared;
+    // Doppelnennungen zuletzt: So zählen auch frisch aufgelöste Formen als zweites Glied
+    // ("Lehrerinnen und Lehrende" → "Lehrerinnen und Lehrer" → "Lehrer").
+    if (doublets && hasDoubletCandidate(out)) out = collapseDoublets(out);
     // Nichts ersetzt → exakt das Original zurückgeben (auch dessen unsichtbare Zeichen).
     return out === prepared ? text : out;
   }
@@ -1303,7 +1324,457 @@
   }
 
   // ─────────────────────────────────────────────────────────────
-  // 8. DOM-VERARBEITUNG
+  // 8. DOPPELNENNUNGEN
+  // ─────────────────────────────────────────────────────────────
+
+  // Eine Doppelnennung nennt dieselbe Gruppe als Femininum und als Maskulinum ("Bürgerinnen
+  // und Bürger", "der Arzt oder die Ärztin"). Es bleibt das Maskulinum – in beiden
+  // Reihenfolgen und so, wie es im Text steht, samt Kasus ("mit Lehrerinnen und Lehrern" →
+  // "mit Lehrern"). Gekürzt wird nur, wenn das andere Glied nachweislich das Maskulinum zum
+  // selben Stamm ist; ein Femininum ohne dieses Gegenstück bleibt stehen ("meine
+  // Freundinnen", "Lehrerinnen und Schüler"). Wo beide Formen Information tragen oder die
+  // Kürzung grammatisch nicht sicher ist, bleibt der Text unverändert (Ausschlussgruppe:
+  // isDoubletExcluded, singularDoubletOk, modsAgree).
+
+  const DOUBLET_NOUN  = "\\p{Lu}\\p{L}*(?:-\\p{L}+)*";
+  const DOUBLET_START = "(?<![\\p{L}\\p{N}_\\-])";
+  const DOUBLET_END   = "(?![\\p{L}\\p{N}_\\-])";
+  // Bindewörter. Großgeschrieben nur für Versaltexte ("KOLLEGINNEN UND KOLLEGEN") – ein
+  // `i`-Flag würde \p{Lu} auch auf Kleinbuchstaben ausdehnen.
+  const DOUBLET_CONN_WORDS =
+    "und|oder|sowie|bzw\\.|beziehungsweise|respektive|resp\\.|UND|ODER|SOWIE|BZW\\.";
+  const DOUBLET_CONN = "(\\s*[,\\/&]\\s*|\\s+(?:" + DOUBLET_CONN_WORDS + ")\\s+)";
+  const DOUBLET_AND  = new Set(["und", "sowie", "&", ","]);   // die übrigen trennen Alternativen
+  // Ein Komma trennt auch Teilsätze ("Erst kamen die Lehrerinnen, Lehrer folgten später",
+  // "die Lehrerinnen, die Lehrer ausbilden"). Als Bindewort zählt es nur, wenn das zweite
+  // Glied eine Phrase abschließt: Satzzeichen, Zeilen- oder Textende oder ein Bindewort.
+  const rePhraseEnd = /^(?:\s*(?:[,.!?;:)\]"“”»«…–—]|$)|\s*\n|\s+(?:und|oder|sowie|bzw\.|&)\s)/;
+  // Beifügungen vor dem zweiten Glied ("oder die Ärztin", ", liebe Kollegen"): kleine
+  // Wörter, die Höflichkeitsform (Ihr, Euer, Dein) und Zahlen – Letztere nur, um sie
+  // auszuschließen.
+  const DOUBLET_MOD = "(?:\\p{Ll}\\p{L}*|\\d[\\d.,]*|Ihr\\p{Ll}*|Eu(?:er|r\\p{Ll}+)|Dein\\p{Ll}*)";
+
+  // "Bürgerinnen und Bürger", "der Arzt oder die Ärztin", "Liebe Kolleginnen, liebe Kollegen".
+  // Gruppen: 1 erstes Glied, 2 Bindewort, 3 Beifügungen des zweiten Glieds, 4 zweites Glied.
+  const reDoublet = new RegExp(DOUBLET_START + "(" + DOUBLET_NOUN + ")" + DOUBLET_CONN +
+    "((?:" + DOUBLET_MOD + "\\s+){0,3})(" + DOUBLET_NOUN + ")" + DOUBLET_END, "gu");
+  // Ergänzungsstrich am zweiten Glied: "Kinderärztinnen und -ärzte", "Kinderärzte und -ärztinnen".
+  // Gruppen: 1 erstes Glied, 2 Bindewort, 3 Ergänzungsglied ohne Strich.
+  const reDoubletTail = new RegExp(DOUBLET_START + "(" + DOUBLET_NOUN + ")" + DOUBLET_CONN +
+    "-(\\p{Ll}\\p{L}+)" + DOUBLET_END, "gu");
+  // Ergänzungsstrich am ersten Glied: "Bürgerinnen- und Bürgerbeteiligung",
+  // "Schüler- und Schülerinnenvertretung".
+  // Gruppen: 1 verkürztes erstes Glied (ohne Strich), 2 Bindewort, 3 zweites Glied.
+  const reDoubletHead = new RegExp(DOUBLET_START + "(" + DOUBLET_NOUN + ")-" +
+    "(\\s+(?:und|oder|sowie|bzw\\.|UND|ODER)\\s+)(" + DOUBLET_NOUN + ")" + DOUBLET_END, "gu");
+  // Pronomenpaar: "Jede und jeder", "jeder/jede", "für jede und jeden".
+  const reDoubletPronoun =
+    /(?<![\p{L}])([Jj]ede[mnr]?)(\s*\/\s*|\s+(?:und|oder|bzw\.|beziehungsweise)\s+)(jede[mnr]?)(?![\p{L}])/gu;
+  // Schlüssel: beide Formen alphabetisch sortiert.
+  const PRONOUN_DOUBLETS = new Map([
+    ["jede|jeder", "jeder"], ["jede|jeden", "jeden"], ["jedem|jeder", "jedem"],
+  ]);
+
+  // Vorfilter (wie hasGenderCandidate: darf zu viel melden, nie zu wenig): ein Nomen auf
+  // -in/-innen direkt vor einem Bindewort oder höchstens drei Wörter dahinter (dort auch
+  // als Ergänzungsglied "-ärztinnen" oder als Bestimmungswort "Bürgerinnenbeteiligung").
+  const reDoubletCandidate = new RegExp([
+    "\\p{Lu}[\\p{L}-]*\\p{L}{2}[iI][nN](?:[nN][eE][nN])?-?(?:\\s*[,\\/&]|\\s+(?:" + DOUBLET_CONN_WORDS + ")\\s)",
+    "(?:[,\\/&]|(?<![\\p{L}])(?:" + DOUBLET_CONN_WORDS + "))\\s*(?:\\S+\\s+){0,3}(?:\\p{Lu}|-\\p{Ll})[\\p{L}-]*\\p{L}{2}[iI][nN]",
+    "(?<![\\p{L}])[Jj]ede[mnr]?\\s*(?:\\/|\\s(?:und|oder|bzw\\.|beziehungsweise)\\s)\\s*jede",
+  ].join("|"), "u");
+
+  function hasDoubletCandidate(text) {
+    return reDoubletCandidate.test(text);
+  }
+
+  // Femininum mit mindestens dreibuchstabigem Stamm: "Ärztinnen" → { stem: "Ärzt",
+  // plural: true }. "Spinnen" und "Rinnen" scheiden am Stamm aus, "Heroin" und Co. über
+  // FALSE_POSITIVES.
+  const reFemForm = /^(.*\p{L}{3})(innen|in)$/iu;
+
+  function femForm(word) {
+    if (FALSE_POSITIVES.has(word.toLowerCase())) return null;
+    const m = word.match(reFemForm);
+    return m ? { stem: m[1], plural: m[2].length > 2 } : null;
+  }
+
+  // Endungen des Maskulinums hinter dem gemeinsamen Stamm. Plural: Lehrer, Ärzte, Kollegen,
+  // Bauern, Zauberer, Chefs und die Dative Lehrern, Zauberern. Singular zusätzlich die
+  // Genitive Arztes, Lehrers, Zauberers.
+  const MASC_PL_ENDINGS = ["", "e", "en", "n", "er", "ern", "s"];
+  const MASC_SG_ENDINGS = ["", "e", "en", "n", "er", "ers", "es", "s"];
+  const mascEndings = plural => plural ? MASC_PL_ENDINGS : MASC_SG_ENDINGS;
+  // Fugen im verkürzten ersten Glied: "Schüler-", "Ärzte-", "Studenten-", "Bürgers-".
+  const LINK_ENDINGS = new Set(["", "e", "en", "n", "s", "es", "er", "ens"]);
+
+  // Umlaute angleichen: Das Femininum hat sie oft, das Maskulinum nicht (Ärztin/Arzt,
+  // Bäuerinnen/Bauern, Jüdinnen/Juden).
+  const foldUmlauts = s => s.toLowerCase().replace(/ä/g, "a").replace(/ö/g, "o").replace(/ü/g, "u");
+
+  // Ist `word` das Maskulinum zum femininen Stamm ("Ärzt" → "Ärzte", "Arzt", "Arztes")?
+  function isMascCounterpart(stem, word, plural) {
+    const s = foldUmlauts(stem), w = foldUmlauts(word);
+    return w.startsWith(s) && mascEndings(plural).includes(w.slice(s.length));
+  }
+
+  // Ausschlussgruppe, Zahlen: Mit Zahl oder Menge trägt jede Form eigene Information
+  // ("40 Lehrerinnen und 60 Lehrer", "rund 40 Lehrerinnen und Lehrer").
+  const COUNT_UNITS = "zwei|drei|vier|fünf|sechs|sieben|acht|neun|zehn|elf|zwölf|" +
+    "(?:drei|vier|fünf|sech|sieb|acht|neun)zehn|(?:zwan|vier|fünf|sech|sieb|acht|neun)zig|dreißig";
+  const reCountWord = new RegExp(
+    "^(?:\\d.*|%" +
+    "|(?:\\p{L}+und)?(?:" + COUNT_UNITS + ")(?:hundert|tausend)?(?:s?te[mnrs]?)?" +
+    "|(?:hundert|tausend|dutzend|million|milliarde)\\p{L}*" +
+    "|hälfte|drittel|viertel|beide[mnrs]?|beiderlei|prozent|promille)$", "iu");
+
+  // Ausschlussgruppe, Satzkontext: Vergleich, Anteile oder das Geschlecht selbst sind Thema
+  // – dann ist die Unterscheidung gemeint ("Unterschiede zwischen Ärztinnen und Ärzten",
+  // "der Anteil der Professorinnen und Professoren"). Wortanfänge, ohne Groß-/Kleinschreibung.
+  const DOUBLET_CUES = [
+    // Vergleich und Gegenüberstellung
+    "zwischen", "untersch", "vergleich", "verglichen", "verhältnis", "gegensatz", "gegensätz",
+    "einerseits", "andererseits", "jeweils", "getrennt", "separat", "gemischt", "paar", "ehepaar",
+    // Betonung beider Gruppen
+    "sowohl", "weder", "entweder", "gleichermaßen",
+    // Anteile und Statistik
+    "mehrheit", "minderheit", "überwiegend", "anteil", "prozent", "promille", "quote", "statisti",
+    // Geschlecht als Thema, auch in Texten über das Gendern selbst
+    "geschlecht", "gender", "weiblich", "männlich", "feminin", "maskulin", "generisch",
+    "doppelnennung", "paarform", "beidnennung", "gleichstell", "gleichberecht", "gleichbehandl",
+    "gleichwertig", "ungleich", "parität", "binär", "inklusiv",
+    "schreibweise", "formulierung", "sprachlich", "sprachform", "wortform", "anrede",
+  ];
+  const reDoubletCue = new RegExp(
+    "(?<![\\p{L}])(?:" + DOUBLET_CUES.join("|") + ")" +
+    "|(?<![\\p{L}])(?:beide[mnrs]?|beiderlei|gleich|gleiche[mnrs]?|eher)(?![\\p{L}])|%",
+    "iu");
+  // Personengruppen nach Geschlecht, nur großgeschrieben ("Frauen", "Frauenanteil", "Mädchen").
+  const reDoubletGenderNoun = /(?<![\p{L}])(?:Frauen|Männer|Mädchen|Jungen|Jungs)/u;
+
+  // Singular-Determinative nach Wort (lex), Genus und Kasusgruppe ("na" = Nominativ/
+  // Akkusativ, "dg" = Dativ/Genitiv). Zwei Glieder passen, wenn es dasselbe Wort in
+  // passendem Kasus ist: "die Ärztin oder der/den Arzt", "der Ärztin oder dem Arzt",
+  // "zur Ärztin oder zum Arzt".
+  const DET_SG = new Map();
+  const addDet = (form, lex, g, k) => {
+    if (!DET_SG.has(form)) DET_SG.set(form, []);
+    DET_SG.get(form).push({ lex, g, k });
+  };
+  for (const [form, g, k] of [["die","f","na"], ["der","f","dg"], ["der","m","na"],
+                              ["den","m","na"], ["dem","m","dg"], ["des","m","dg"]]) {
+    addDet(form, "d", g, k);
+  }
+  addDet("zur", "zu", "f", "dg");
+  addDet("zum", "zu", "m", "dg");
+  // ein-Wörter: Maskulinum Nominativ ohne Endung ("ein", "Ihr"); "euer" verliert das e ("eure").
+  for (const lex of ["ein","kein","irgendein","mein","dein","sein","ihr","unser","euer"]) {
+    const b = lex === "euer" ? "eur" : lex;
+    addDet(b + "e", lex, "f", "na");  addDet(b + "er", lex, "f", "dg");
+    addDet(lex, lex, "m", "na");      addDet(b + "en", lex, "m", "na");
+    addDet(b + "em", lex, "m", "dg"); addDet(b + "es", lex, "m", "dg");
+  }
+  // dieser-Wörter: Maskulinum Nominativ auf -er.
+  for (const lex of ["dies","jen","jed","welch","manch","solch","jeglich"]) {
+    addDet(lex + "e", lex, "f", "na");  addDet(lex + "er", lex, "f", "dg");
+    addDet(lex + "er", lex, "m", "na"); addDet(lex + "en", lex, "m", "na");
+    addDet(lex + "em", lex, "m", "dg"); addDet(lex + "es", lex, "m", "dg");
+  }
+
+  function detAgree(fem, masc) {
+    const fs = DET_SG.get(fem), ms = DET_SG.get(masc);
+    return !!fs && !!ms && fs.some(f => f.g === "f" &&
+      ms.some(m => m.g === "m" && m.lex === f.lex && m.k === f.k));
+  }
+
+  // Gleiches Adjektiv mit anderer Endung: "neue"/"neuer", "liebe"/"lieber".
+  const adjStem = w => foldUmlauts(w).replace(/e[mnrs]?$/, "");
+
+  function adjAgree(fem, masc) {
+    if (DET_SG.has(fem) || DET_SG.has(masc)) return false;
+    const stem = adjStem(fem);
+    return stem.length >= 3 && stem === adjStem(masc);
+  }
+
+  // Passen die Beifügungen an gleicher Stelle zueinander? Im Plural nur gleiche Wörter
+  // ("liebe …, liebe …"), im Singular auch Genus-Paare ("die …/der …", "neue …/neuer …").
+  // Zahlen nie: "4 Lehrerinnen und 4 Lehrer" sind acht Personen.
+  function modsAgree(femWord, mascWord, plural) {
+    const f = femWord.toLowerCase(), m = mascWord.toLowerCase();
+    if (reCountWord.test(f) || reCountWord.test(m)) return false;
+    if (f === m) return true;
+    return !plural && (detAgree(f, m) || adjAgree(f, m));
+  }
+
+  // Die bis zu `n` Wörter direkt vor `offset`, das nächste zuerst, je { word, index }. Nur
+  // durch Leerraum getrennt: Ein Satzzeichen beendet die Folge, eine öffnende Klammer oder
+  // ein Anführungszeichen nach ihrem Wort.
+  function wordsBefore(text, offset, n) {
+    const words = [];
+    let end = offset;
+    while (words.length < n) {
+      const from = Math.max(0, end - 60);
+      const m = text.slice(from, end)
+        .match(/([([„“‚‘»«"']?)([\p{L}\p{N}](?:[\p{L}\p{N}.,%-]*[\p{L}\p{N}%])?)\s+$/u);
+      if (!m) break;
+      words.push({ word: m[2], index: from + m.index + m[1].length });
+      if (m[1]) break;
+      end = from + m.index;
+    }
+    return words;
+  }
+
+  // Der Satz um die Doppelnennung, ohne sie selbst (höchstens 150 Zeichen je Seite). Ein
+  // Punkt beendet den Satz nur vor Großschreibung oder am Ende und nicht nach einer
+  // Abkürzung ("bzw. 200", "z. B. In", "Dr. Müller").
+  const SENTENCE_END = "[!?…;\\n]|(?<!(?:^|[\\s.(])(?:\\p{L}|bzw|ca|vgl|Dr|Prof|Nr|St|ggf|evtl|inkl|bspw|sog))" +
+    "\\.(?=\\s+\\p{Lu}|\\s*$)";
+  const reSentenceStart = new RegExp("^[\\s\\S]*(?:" + SENTENCE_END + ")", "u");
+  const reSentenceEnd   = new RegExp("(?:" + SENTENCE_END + ")[\\s\\S]*$", "u");
+  const reSentenceMark  = new RegExp(SENTENCE_END, "u");
+
+  function sentenceAround(text, start, end) {
+    const left  = text.slice(Math.max(0, start - 150), start).replace(reSentenceStart, "");
+    const right = text.slice(end, end + 150).replace(reSentenceEnd, "");
+    return left + " … " + right;
+  }
+
+  const reRespective = /(?<![\p{L}])(?:bzw|beziehungsweise|respektive|resp)(?![\p{L}])/iu;
+
+  // Ausschlussgruppe: Die Nennung beider Formen trägt Information oder gehört zu einer
+  // Konstruktion, die beide braucht. `start`/`end` umfassen beide Glieder samt Beifügungen.
+  function isDoubletExcluded(text, start, end, connWord) {
+    const disjunctive = !DOUBLET_AND.has(connWord);
+    // Zitiert statt verwendet: „Bürgerinnen und Bürger“ (Beispiel in Texten über Sprache)
+    if (/["„“”‚‘'»«›‹]/.test(text[start - 1] ?? "") && /["“”‘’'»«›‹]/.test(text[end] ?? "")) return true;
+    const before = wordsBefore(text, start, 3).map(w => w.word.toLowerCase());
+    const after = text.slice(end, end + 40);
+    // Zahlen davor oder direkt danach: "rund 40 Lehrerinnen und Lehrer",
+    // "Lehrerinnen und Lehrer (40 bzw. 60)"
+    if (before.some(w => reCountWord.test(w))) return true;
+    const next = after.match(/^\s*[(:]?\s*([^\s.,;:!?)]+)/u)?.[1];
+    if (next && reCountWord.test(next)) return true;
+    // Einräumung und Auswahlfrage: "egal ob Lehrerin oder Lehrer", "Lehrerinnen oder Lehrer –
+    // wer verdient mehr?"
+    if (before.includes("ob")) return true;
+    if (disjunctive && text.slice(end, end + 150).match(reSentenceMark)?.[0] === "?") return true;
+    // Vergleich, Anteile, Geschlecht als Thema – im selben Satz. Ein zweites "bzw." ordnet zu:
+    // "Lehrerinnen bzw. Lehrer erhalten 100 bzw. 200 Euro".
+    const sentence = sentenceAround(text, start, end);
+    if (reRespective.test(connWord) && reRespective.test(sentence)) return true;
+    return reDoubletCue.test(sentence) || reDoubletGenderNoun.test(sentence);
+  }
+
+  const SALUTATION = new Set(["liebe", "lieber", "geehrte", "geehrter", "werte", "werter"]);
+
+  // Singular: "und" verbindet meist zwei Personen ("der Arzt und die Ärztin kamen"). Gekürzt
+  // wird bei "oder", "bzw." und "/", sonst nur bei verteilendem Determinativ ("jede Bürgerin
+  // und jeder Bürger"), in der Anrede ("Liebe Kollegin, lieber Kollege") und in einer
+  // Aufzählung, die mit "oder" weitergeht ("Ihre Ärztin, Ihren Arzt oder Ihre Apotheke").
+  // Ohne Beifügungen braucht es einen Personenbeleg ("Augustin oder August" bleibt), und ein
+  // feminines Wort vor dem Femininum verbietet die Kürzung ("die Ärztin oder Arzt").
+  function singularDoubletOk(text, fem, femFirst, iA, endB, connWord, disjunctive, mods) {
+    const lower = mods.map(w => w.toLowerCase());
+    if (!disjunctive) {
+      const distributive = lower.some(w => DET_SG.get(w)?.some(d => d.lex === "jed" || d.lex === "kein"));
+      const salutation = connWord === "," && lower.some(w => SALUTATION.has(w));
+      const listGoesOn = connWord === "," &&
+        /^\s+(?:oder|bzw\.|beziehungsweise)\s/.test(text.slice(endB, endB + 20));
+      if (!distributive && !salutation && !listGoesOn) return false;
+    }
+    if (mods.length) return true;
+    if (!isLikelyPersonStem(fem.stem) && !RULE_SAFE.test(fem.stem) &&
+        !pageStems.has(fem.stem.toLowerCase())) return false;
+    const lead = femFirst ? wordsBefore(text, iA, 1)[0]?.word : null;
+    return !lead || !isGenderedLead(lead);
+  }
+
+  // Kann das Wort vor dem Femininum ein feminines Determinativ oder Adjektiv sein ("die",
+  // "eine erfahrene")? Präpositionen und Konjunktionen ("als", "für") sind unbedenklich.
+  function isGenderedLead(word) {
+    const lower = word.toLowerCase();
+    return DET_SG.has(lower) || (!PART_PLURAL_LEAD.has(lower) && /\p{Ll}e[mnrs]?$/u.test(word));
+  }
+
+  // Personengruppen in Grundform (für listComma), dazu Gruppenwörter ohne Femininum.
+  const PERSON_GROUPS = new Set([
+    ...[...LEXICON.values()].flatMap(e => [e.sg, e.pl, e.m]),
+    ...[...PARTICIPLE.values()].flatMap(e => [e.m, e.f, e.pl]),
+    ...[...PSEUDO_FEM.values()].flatMap(e => [e.sg, e.pl]),
+    "Eltern", "Großeltern", "Kinder", "Jugendliche", "Jugendlichen", "Familien", "Menschen",
+    "Leute", "Angehörige", "Angehörigen", "Beschäftigte", "Beschäftigten", "Angestellte",
+    "Angestellten", "Auszubildende", "Auszubildenden", "Lehrkräfte", "Fachkräfte",
+  ].filter(Boolean).map(w => w.toLowerCase()));
+
+  // "Liebe Eltern, Schülerinnen und Schüler": Die Doppelnennung schließt eine Aufzählung
+  // ab, ihr Bindewort gilt der ganzen Liste → "Liebe Eltern und Schüler" statt "Liebe
+  // Eltern, Schüler". Nur nach einer Personengruppe ("Vielen Dank, Kolleginnen und Kollegen"
+  // ist eine Anrede) und wenn die Aufzählung noch kein eigenes Bindewort hat ("Damen und
+  // Herren, Kolleginnen und Kollegen"). Ergebnis: Position des Kommas oder -1.
+  function listComma(text, offset, connWord) {
+    if (connWord !== "und" && connWord !== "oder" && connWord !== "sowie") return -1;
+    const m = text.slice(Math.max(0, offset - 200), offset)
+      .match(/([^.!?;:\n]*?)(\p{Lu}\p{L}*)(,\s*)$/u);
+    if (!m || /(?<![\p{L}])(?:und|oder|sowie)(?![\p{L}])|&/u.test(m[1])) return -1;
+    if (!PERSON_GROUPS.has(m[2].toLowerCase()) && !splitCompound(m[2])) return -1;
+    return offset - m[3].length;
+  }
+
+  // Streicht text[start, end). Begann das Gestrichene groß und beginnt das Verbleibende
+  // klein, wandert die Großschreibung mit ("Die Ärztin oder der Arzt" → "Der Arzt").
+  function cutDoublet(text, start, end) {
+    const next = text[end] ?? "";
+    return /\p{Lu}/u.test(text[start]) && /\p{Ll}/u.test(next)
+      ? { start, end: end + 1, text: next.toUpperCase() }
+      : { start, end, text: "" };
+  }
+
+  // Wertet einen reDoublet-Treffer aus: { start, end, text } als Ersetzung oder null.
+  function resolveDoublet(text, m) {
+    const [, first, conn, modsText, second] = m;
+    const iA = m.index, endA = iA + first.length;
+    const iMods = endA + conn.length, iB = iMods + modsText.length, endB = iB + second.length;
+
+    // Das Femininum steht vorn oder hinten; das andere Glied muss sein Maskulinum sein.
+    let fem = femForm(first), femFirst = true;
+    if (!fem || !isMascCounterpart(fem.stem, second, fem.plural)) {
+      fem = femForm(second);
+      femFirst = false;
+      if (!fem || !isMascCounterpart(fem.stem, first, fem.plural)) return null;
+    }
+    const connWord = conn.trim().toLowerCase();
+    const disjunctive = !DOUBLET_AND.has(connWord);
+    if (connWord === "," && !rePhraseEnd.test(text.slice(endB, endB + 12))) return null;
+
+    // Eigene Beifügungen am zweiten Glied verlangen passende am ersten ("der Arzt oder die
+    // Ärztin", "Liebe Kolleginnen, liebe Kollegen"); ohne sie gelten die Wörter vor dem
+    // ersten Glied für beide ("die neuen Lehrerinnen und Lehrer").
+    const mods2 = modsText.split(/\s+/).filter(Boolean);
+    const lead = wordsBefore(text, iA, mods2.length).reverse();
+    if (lead.length < mods2.length) return null;
+    const mods1 = lead.map(w => w.word);
+    const [femMods, mascMods] = femFirst ? [mods1, mods2] : [mods2, mods1];
+    if (femMods.some((w, i) => !modsAgree(w, mascMods[i], fem.plural))) return null;
+    if (!fem.plural && !singularDoubletOk(text, fem, femFirst, iA, endB, connWord, disjunctive,
+                                          [...mods1, ...mods2])) return null;
+
+    const start = lead.length ? lead[0].index : iA;
+    if (isDoubletExcluded(text, start, endB, connWord)) return null;
+
+    // Femininum samt eigener Beifügungen und Bindewort streichen.
+    const comma = mods2.length ? -1 : listComma(text, iA, connWord);
+    if (femFirst) {
+      return comma >= 0 ? { start: comma, end: iB, text: conn } : cutDoublet(text, start, iMods);
+    }
+    return comma >= 0 ? { start: comma, end: endB, text: conn + first }
+                      : { start: endA, end: endB, text: "" };
+  }
+
+  // "Kinderärzt" + "ärzte" → "Kinder": Der Stamm endet auf das Grundwort des Ergänzungsglieds.
+  function compoundPrefix(stem, tail, plural) {
+    const s = foldUmlauts(stem), t = foldUmlauts(tail);
+    for (const ending of mascEndings(plural)) {
+      if (!t.endsWith(ending)) continue;
+      const base = t.slice(0, t.length - ending.length);
+      if (base.length >= 3 && s.length > base.length && s.endsWith(base)) {
+        return stem.slice(0, s.length - base.length);
+      }
+    }
+    return null;
+  }
+
+  // Endet `word` auf das Maskulinum zum Stamm, nach einem Bestimmungswort ("Kinderärzte", "ärzt")?
+  function endsWithMasc(word, stem, plural) {
+    const w = foldUmlauts(word), s = foldUmlauts(stem);
+    return mascEndings(plural).some(e => w.length > s.length + e.length && w.endsWith(s + e));
+  }
+
+  function resolveDoubletTail(text, m) {
+    const [all, first, conn, tail] = m;
+    const iA = m.index, end = iA + all.length;
+    const connWord = conn.trim().toLowerCase();
+    const disjunctive = !DOUBLET_AND.has(connWord);
+    if (connWord === "," && !rePhraseEnd.test(text.slice(end, end + 12))) return null;
+    let fem = femForm(first), edit = null;
+    if (fem) {                       // "Kinderärztinnen und -ärzte" → "Kinderärzte"
+      const prefix = compoundPrefix(fem.stem, tail, fem.plural);
+      if (prefix) edit = { start: iA, end, text: prefix + tail };
+    }
+    if (!edit) {                     // "Kinderärzte und -ärztinnen" → "Kinderärzte"
+      fem = femForm(tail);
+      if (!fem || !endsWithMasc(first, fem.stem, fem.plural)) return null;
+      edit = { start: iA + first.length, end, text: "" };
+    }
+    if (!fem.plural && !disjunctive) return null;          // "Kinderärztin und -arzt": zwei Personen
+    return isDoubletExcluded(text, iA, end, connWord) ? null : edit;
+  }
+
+  // Femininum als Bestimmungswort: "Schülerinnenvertretung" → "Schüler" + "vertretung".
+  const reFemCompound = /^(.*\p{L}{3})innen(\p{Ll}\p{L}{2,})$/u;
+
+  function resolveDoubletHead(text, m) {
+    const [all, first, conn, second] = m;
+    const iA = m.index, iB = iA + first.length + 1 + conn.length, end = iA + all.length;
+    let edit;
+    const fem = femForm(first);
+    if (fem) {                       // "Bürgerinnen- und Bürgerbeteiligung" → "Bürgerbeteiligung"
+      const s = foldUmlauts(fem.stem), rest = foldUmlauts(second).slice(s.length);
+      if (!foldUmlauts(second).startsWith(s) || rest.length < 3 || rest.startsWith("innen")) return null;
+      edit = { start: iA, end: iB, text: "" };
+    } else {                         // "Schüler- und Schülerinnenvertretung" → "Schülervertretung"
+      const c = second.match(reFemCompound);
+      if (!c) return null;
+      const f = foldUmlauts(first), s = foldUmlauts(c[1]);
+      if (!f.startsWith(s) || !LINK_ENDINGS.has(f.slice(s.length))) return null;
+      edit = { start: iA, end, text: first + c[2] };
+    }
+    return isDoubletExcluded(text, iA, end, conn.trim().toLowerCase()) ? null : edit;
+  }
+
+  function resolveDoubletPronoun(text, m) {
+    const [all, a, conn, b] = m;
+    const masc = PRONOUN_DOUBLETS.get([a.toLowerCase(), b.toLowerCase()].sort().join("|"));
+    if (!masc) return null;
+    const end = m.index + all.length;
+    // Ein folgendes Femininum richtet sich nach "jede": "jeder und jede Lehrerin" bleibt.
+    const noun = text.slice(end, end + 60).match(/^\s+(\p{Lu}[\p{L}-]*)/u)?.[1];
+    if (noun && femForm(noun)) return null;
+    return isDoubletExcluded(text, m.index, end, conn.trim().toLowerCase())
+      ? null : { start: m.index, end, text: preserveCase(a, masc) };
+  }
+
+  // Wendet ein Doppelnennungs-Muster an. Anders als String.replace sucht es nach einem
+  // verworfenen Treffer ab dessen zweitem Glied weiter – das kann das erste Glied der
+  // nächsten Doppelnennung sein ("Schülerinnen, Lehrerinnen und Lehrer").
+  function applyDoubletPass(text, re, resolve) {
+    let out = "", last = 0, m;
+    re.lastIndex = 0;
+    while ((m = re.exec(text))) {
+      const end = m.index + m[0].length;
+      const edit = resolve(text, m);
+      if (edit && edit.start >= last) {
+        out += text.slice(last, edit.start) + edit.text;
+        last = edit.end;
+        re.lastIndex = Math.max(end, edit.end);
+      } else {
+        re.lastIndex = end - m[m.length - 1].length;
+      }
+    }
+    return last ? out + text.slice(last) : text;
+  }
+
+  // Die Sondermuster laufen nur, wenn ihr Kennzeichen im Text vorkommt (Ergänzungsstrich, "jede").
+  function collapseDoublets(text) {
+    let out = text;
+    if (/-\s/.test(out)) out = applyDoubletPass(out, reDoubletHead, resolveDoubletHead);
+    if (/[\s,/&]-\p{Ll}/u.test(out)) out = applyDoubletPass(out, reDoubletTail, resolveDoubletTail);
+    out = applyDoubletPass(out, reDoublet, resolveDoublet);
+    if (/jede/i.test(out)) out = applyDoubletPass(out, reDoubletPronoun, resolveDoubletPronoun);
+    return out;
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 9. DOM-VERARBEITUNG
   // ─────────────────────────────────────────────────────────────
 
   const processed = new WeakSet();
@@ -1376,7 +1847,7 @@
   }
 
   // ─────────────────────────────────────────────────────────────
-  // 9. SPLIT-MARKER-NORMALISIERUNG
+  // 10. SPLIT-MARKER-NORMALISIERUNG
   // ─────────────────────────────────────────────────────────────
 
   const reStemEndFix = new RegExp("[\\p{L}]{2,}\\s*$", "u");
@@ -1448,7 +1919,7 @@
   }
 
   // ─────────────────────────────────────────────────────────────
-  // 10. ATTRIBUTE, META, SVG, JSON-LD, SHADOW DOM
+  // 11. ATTRIBUTE, META, SVG, JSON-LD, SHADOW DOM
   // ─────────────────────────────────────────────────────────────
 
   function normalizeElementAttributes(element) {
@@ -1549,7 +2020,7 @@
   }
 
   // ─────────────────────────────────────────────────────────────
-  // 11. MUTATIONOBSERVER (debounced)
+  // 12. MUTATIONOBSERVER (debounced)
   // ─────────────────────────────────────────────────────────────
 
   const observers = [];                 // alle aktiven Observer – stop() trennt sie
@@ -1619,7 +2090,8 @@
           if (processed.has(m.target)) {
             // Text wurde extern geändert (z.B. React-Hydration) –
             // erneut prüfen ob Gendering vorhanden
-            if (hasGenderCandidate(m.target.nodeValue || "")) {
+            const value = m.target.nodeValue || "";
+            if (hasGenderCandidate(value) || (doubletsEnabled && hasDoubletCandidate(value))) {
               processed.delete(m.target);
               pendingText.add(m.target);
             }
@@ -1666,7 +2138,7 @@
   }
 
   // ─────────────────────────────────────────────────────────────
-  // 12. START / STOP / INIT (wird nach Config-Laden aufgerufen)
+  // 13. START / STOP / INIT (wird nach Config-Laden aufgerufen)
   // ─────────────────────────────────────────────────────────────
 
   function start() {
@@ -1710,7 +2182,9 @@
       FALSE_POSITIVES,
       wiktCache,
       hasGenderCandidate,
+      hasDoubletCandidate,
       applyPatterns,
+      collapseDoublets,
       collectLookupStems,
       parseWiktionaryFlexion,
       preserveCase,
