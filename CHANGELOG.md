@@ -1,4 +1,16 @@
 # Changelog
+## 3.1.2 (2026-10-07)
+
+Fehlerbehebung für einen Absturz beim Seitenstart. Keine neuen Funktionen, deshalb ein Patch-Sprung.
+
+### Fehlerbehebungen
+- **„InternalError: too much recursion" beim Start**: Der Vorfilter für Doppelnennungen setzte in langen Zeichenketten ohne Leerzeichen (etwa Meta-Tags mit Base64 oder JSON) an jeder Stelle neu an und lief quadratisch – bei 40 000 Zeichen rund 2 s. Firefox brach das mit „too much recursion" ab, und mit dem Fehler endete die gesamte Verarbeitung der Seite. Der Vorfilter beginnt das erste Nomen jetzt nur am Wortanfang und lässt die Wörter dazwischen spätestens am nächsten Bindezeichen enden; er läuft damit linear (1 000 000 Zeichen in rund 15 ms) und meldet dieselben Doppelnennungen wie zuvor.
+
+### Wartung
+- **Tests**: 1 neuer Testfall (101 insgesamt) für die Laufzeit des Vorfilters bei langen Zeichenketten.
+
+---
+
 ## 3.1.1 (2026-10-03)
 
 Fehlerbehebungen nach einem Test am Forum von derstandard.at. Keine neuen Funktionen, deshalb ein Patch-Sprung.

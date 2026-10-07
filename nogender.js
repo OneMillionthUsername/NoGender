@@ -1382,9 +1382,13 @@
   // Vorfilter (wie hasGenderCandidate: darf zu viel melden, nie zu wenig): ein Nomen auf
   // -in/-innen direkt vor einem Bindewort oder höchstens drei Wörter dahinter (dort auch
   // als Ergänzungsglied "-ärztinnen" oder als Bestimmungswort "Bürgerinnenbeteiligung").
+  // Linear in der Textlänge: Das erste Nomen beginnt nur am Wortanfang (wie DOUBLET_START),
+  // die Wörter dazwischen enden spätestens am nächsten Bindezeichen. Sonst setzt die Suche
+  // in langen Zeichenketten ohne Leerzeichen (Meta-Tags, Base64, JSON) an jeder Stelle neu
+  // an – quadratische Laufzeit, die Firefox als "too much recursion" abbricht.
   const reDoubletCandidate = new RegExp([
-    "\\p{Lu}[\\p{L}-]*\\p{L}{2}[iI][nN](?:[nN][eE][nN])?-?(?:\\s*[,\\/&]|\\s+(?:" + DOUBLET_CONN_WORDS + ")\\s)",
-    "(?:[,\\/&]|(?<![\\p{L}])(?:" + DOUBLET_CONN_WORDS + "))\\s*(?:\\S+\\s+){0,3}(?:\\p{Lu}|-\\p{Ll})[\\p{L}-]*\\p{L}{2}[iI][nN]",
+    DOUBLET_START + "\\p{Lu}[\\p{L}-]*\\p{L}{2}[iI][nN](?:[nN][eE][nN])?-?(?:\\s*[,\\/&]|\\s+(?:" + DOUBLET_CONN_WORDS + ")\\s)",
+    "(?:[,\\/&]|(?<![\\p{L}])(?:" + DOUBLET_CONN_WORDS + "))\\s*(?:[^\\s,\\/&]+\\s+){0,3}(?:\\p{Lu}|-\\p{Ll})[\\p{L}-]*\\p{L}{2}[iI][nN]",
     "(?<![\\p{L}])[Jj]ede[mnr]?\\s*(?:\\/|\\s(?:und|oder|bzw\\.|beziehungsweise)\\s)\\s*jede",
   ].join("|"), "u");
 

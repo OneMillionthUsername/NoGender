@@ -969,6 +969,23 @@ test("Vorfilter übersieht nichts (alle Testeingaben)", () => {
   }
 });
 
+// Lange Zeichenketten ohne Leerzeichen (Meta-Tags, Base64, JSON) liefen im Vorfilter
+// quadratisch; Firefox brach das mit "InternalError: too much recursion" ab, und mit dem
+// Fehler endete die ganze Verarbeitung der Seite. Vorher ~50 s je Eingabe, jetzt wenige ms.
+test("Vorfilter für Doppelnennungen bleibt linear bei langen Zeichenketten", () => {
+  const n = 200000;
+  const inputs = [
+    "A".repeat(n), "Ab".repeat(n / 2), "A-".repeat(n / 2), ",x".repeat(n / 2), "/A".repeat(n / 2),
+    "Lehrer*innen " + "A".repeat(n),
+  ];
+  const start = Date.now();
+  for (const input of inputs) {
+    assert.equal(hasDoubletCandidate(input), false);
+    normalizeGenderedText(input);
+  }
+  assert.ok(Date.now() - start < 2000, `zu langsam: ${Date.now() - start} ms`);
+});
+
 // Dasselbe für Doppelnennungen – geprüft am Rohtext und nach den übrigen Mustern, denn
 // normalizeGenderedText fragt den Vorfilter an beiden Stellen.
 test("Vorfilter für Doppelnennungen übersieht nichts (alle Testeingaben)", () => {
