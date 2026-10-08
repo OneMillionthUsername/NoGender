@@ -8,6 +8,11 @@ let cfg = { ...DEFAULT };
 let tabHost = null;
 let toastTimer = null;
 
+// ── Plattform ─────────────────────────────────────────────────
+browser.runtime.getPlatformInfo().then(info => {
+  if (info.os === "android") document.documentElement.classList.add("mobile");
+})
+
 // Einzige Versionsquelle ist das Manifest.
 document.getElementById("version").textContent = "v" + browser.runtime.getManifest().version;
 
