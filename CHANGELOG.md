@@ -1,4 +1,8 @@
 # Changelog
+## 3.1.3 und 3.1.4 (2026-10-09)
+
+Mobilgeräte werden jetzt automatisch erkannt und das Popup füllt den ganzen Bildschirm aus.
+
 ## 3.1.2 (2026-10-07)
 
 Fehlerbehebung für einen Absturz beim Seitenstart. Keine neuen Funktionen, deshalb ein Patch-Sprung.
