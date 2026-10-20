@@ -691,6 +691,10 @@
   const PARTICIPLE = new Map([
     ["antragstellend", { m:"Antragsteller", f:"Antragstellerin", pl:"Antragsteller" }],
     ["anwohnend",      { m:"Anwohner",      f:"Anwohnerin",      pl:"Anwohner"      }],
+    ["antragstellend", { m:"Antragsteller", f:"Antragstellerin", pl:"Antragsteller" }],
+    ["ausbildend",     { m:"Ausbilder",     f:"Ausbilderin",     pl:"Ausbilder"     }],
+    ["beratend",       { m:"Berater",       f:"Beraterin",       pl:"Berater"       }],
+    ["besuchend",      { m:"Besucher",      f:"Besucherin",      pl:"Besucher"      }],
     ["demonstrierend", { m:"Demonstrant",   f:"Demonstrantin",   pl:"Demonstranten" }],
     ["flüchtend",      { m:"Flüchtling",    f:null,              pl:"Flüchtlinge"   }],
     ["forschend",      { m:"Forscher",      f:"Forscherin",      pl:"Forscher"      }],
@@ -703,9 +707,12 @@
     ["pendelnd",       { m:"Pendler",       f:"Pendlerin",       pl:"Pendler"       }],
     ["pflegend",       { m:"Pfleger",       f:"Pflegerin",       pl:"Pfleger"       }],
     ["promovierend",   { m:"Doktorand",     f:"Doktorandin",     pl:"Doktoranden"   }],
+    ["protestierend",  { m:"Protestant",    f:"Protestantin",    pl:"Protestanten"  }],
+    ["radfahrend",     { m:"Radfahrer",     f:"Radfahrerin",     pl:"Radfahrer"     }],
     ["studierend",     { m:"Student",       f:"Studentin",       pl:"Studenten"     }],
     ["teilnehmend",    { m:"Teilnehmer",    f:"Teilnehmerin",    pl:"Teilnehmer"    }],
     ["wählend",        { m:"Wähler",        f:"Wählerin",        pl:"Wähler"        }],
+    ["zufußgehend",    { m:"Fußgänger",     f:"Fußgängerin",     pl:"Fußgänger"     }],
     ["zuhörend",       { m:"Zuhörer",       f:"Zuhörerin",       pl:"Zuhörer"       }],
     ["zuschauend",     { m:"Zuschauer",     f:"Zuschauerin",     pl:"Zuschauer"     }],
   ]);
