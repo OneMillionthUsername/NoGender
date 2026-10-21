@@ -49,9 +49,10 @@ korrekt aufzulösen (siehe [Datenschutz](#datenschutz)).
   (Syntax-Highlighting) und auch, wenn er nachträglich hineingestreamt wird (KI-Chats).
 - **Vorsichtig bei Mehrdeutigem**: `Termin: in zwei Wochen`, `Farbe: innen weiß` oder
   `Tür (innen)` sind normales Deutsch und bleiben stehen. Formen mit Leerzeichen am
-  Marker (`Mieter: innen`) werden nur bei belegten Personenbezeichnungen ersetzt – Beleg
-  ist das Lexikon, Wiktionary oder dasselbe Wort kompakt gegendert irgendwo auf der
-  Seite (`Mieter:innen`). Großes „I“ direkt am Marker (`Mieter*Innen`) gilt als eindeutig,
+  Marker (`Mieter: innen`) bleiben stehen – außer auf Seiten aus der Liste
+  `SPACED_MARKER_DOMAINS` im Code; dort werden sie bei belegten Personenbezeichnungen
+  ersetzt (Lexikon, Wiktionary oder dasselbe Wort kompakt gegendert irgendwo auf der
+  Seite, `Mieter:innen`). Großes „I“ direkt am Marker (`Mieter*Innen`) gilt als eindeutig,
   außer nach `/` (`Außen/Innen`).
 
 ### Beispiele
@@ -139,9 +140,9 @@ npm start          # startet Firefox mit geladener Erweiterung (Live-Reload)
    gegenderte Form enthalten kann. Die allermeisten Knoten scheiden hier aus.
 2. Trifft das zu, laufen spezialisierte Regex-Muster (Singular, Plural, Binnen-I,
    Klammern, Adjektivformen, Artikelpaare …) nacheinander über den Text.
-   Kompakte Formen (`Lehrer:innen`) gelten als eindeutig; mit Leerzeichen oder großem
-   „I“ braucht es einen Beleg, dass der Stamm eine Personenbezeichnung ist
-   (`markerFormKind`).
+   Kompakte Formen (`Lehrer:innen`) gelten als eindeutig; mit großem „I“ – und mit
+   Leerzeichen, das nur auf Seiten aus `SPACED_MARKER_DOMAINS` aufgelöst wird – braucht
+   es einen Beleg, dass der Stamm eine Personenbezeichnung ist (`markerFormKind`).
 3. Der erkannte **Wortstamm** wird aufgelöst – zuerst über das eingebaute, maßgebliche
    `LEXICON`, dann über den Wiktionary-Cache, zuletzt über regelbasierte
    Plural-/Singularbildung (`toPlural`, `toSingular`).
@@ -235,8 +236,11 @@ mit Tests absichern.
 - **`mensch`/`frau` → `man`**: nur kleingeschrieben und nicht nach einem Determinativ
   (`jeder mensch`, `meine frau` bleiben). Nach einem Adjektiv (`junge frau`) kann das
   Substantiv in durchgängig kleingeschriebenen Texten noch fälschlich ersetzt werden.
-- **Formen mit Leerzeichen am Marker** (`Maurer: innen`) und großem „I“ nach `/`
-  (`Maurer/Innen`) brauchen einen Personenbeleg: Lexikon, Wiktionary oder dasselbe Wort
+- **Formen mit Leerzeichen am Marker** (`Maurer: innen`, `Kund :innen`) werden nur auf
+  Seiten aus `SPACED_MARKER_DOMAINS` (samt Subdomains) aufgelöst, sonst bleiben sie
+  wegen zu vieler Falschtreffer stehen. Die Liste steht im Code, nicht im Popup.
+- **Personenbeleg**: Formen mit Leerzeichen (auf den gelisteten Seiten) und großem „I“
+  nach `/` (`Maurer/Innen`) brauchen einen Beleg: Lexikon, Wiktionary oder dasselbe Wort
   kompakt gegendert auf derselben Seite. Steht so ein Wort allein und ist der Lookup
   abgeschaltet, bleibt es stehen.
 - **Pluralregeln** sind Faustregeln: seltene Ausnahmen (z. B. `Barbar:innen` →

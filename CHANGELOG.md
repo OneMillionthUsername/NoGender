@@ -1,4 +1,20 @@
 # Changelog
+## 3.2.0 (2026-10-21)
+
+Formen mit Leerzeichen am Marker werden nur noch auf ausgewählten Seiten aufgelöst, dazu neue Partizipien. Geändertes Verhalten auf allen Seiten, deshalb ein Minor-Sprung.
+
+### Geändertes Verhalten
+- **Formen mit Leerzeichen am Marker** („Kund: innen", „Firmenkund :innen", „Lehrer: innen") bleiben jetzt stehen. Trotz Personenbeleg trafen sie zu oft normalen Text. Aufgelöst werden sie nur noch auf Seiten aus der Liste `SPACED_MARKER_DOMAINS` im Code (samt Subdomains), dort mit denselben Regeln wie bisher („Termin: in Kürze" bleibt auch dort stehen). Kompakte Formen („Kund:innen") und Klammerformen („Lehrer (innen)") gelten unverändert überall. Für Formen, die stehen bleiben, gibt es auch keine Wiktionary-Anfragen mehr.
+
+### Neue Funktionen
+- **Weitere Partizipien** (Beitrag von @phisigma, #6): „Ausbildende" → „Ausbilder", „Beratende" → „Berater", „Besuchende" → „Besucher", „Radfahrende" → „Radfahrer", „Zufußgehende" → „Fußgänger". Die Liste ist jetzt alphabetisch sortiert. „Protestierende" ist nicht dabei, weil „Protestant" die Bedeutung ändert.
+
+### Wartung
+- **Tests**: 8 neue Testfälle (109 insgesamt) in `test/spaced-domain.test.js`. Sie laden das Skript mit simuliertem Host neu: gelistete Domain, `www.` und Subdomain, ähnlich klingende fremde Domains (`nicht…`, `….evil.com`) und eine Seite ohne Host.
+- **Versionen**: `package.json` stand noch auf 3.1.2. Jetzt stimmen beide wieder mit `manifest.json` überein.
+
+---
+
 ## 3.1.3 und 3.1.4 (2026-10-09)
 
 Mobilgeräte werden jetzt automatisch erkannt und das Popup füllt den ganzen Bildschirm aus.

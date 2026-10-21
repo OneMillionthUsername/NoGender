@@ -134,12 +134,23 @@
     ? browser.runtime.getManifest().version
     : "dev";
 
-  function isBlockedDomain(cfg) {
+  // Nur auf diesen Seiten werden Marker-Formen mit Leerzeichen ("Kund: innen", "Lehrer :innen")
+  // aufgelöst – sonst sind es überwiegend Falschtreffer. Gilt auch für Subdomains.
+  // Klammerformen ("Lehrer (innen)") und kompakte Formen gelten überall.
+  const SPACED_MARKER_DOMAINS = ["example.org"];
+
+  function hostMatches(domains) {
     const host = location.hostname.replace(/^www\./, "");
-    return (cfg.blockedDomains || []).some(
-      d => host === d || host.endsWith("." + d)
-    );
+    return domains.some(d => host === d || host.endsWith("." + d));
   }
+
+  function isBlockedDomain(cfg) {
+    return hostMatches(cfg.blockedDomains || []);
+  }
+
+  // Unter Node (Tests) fehlt `location` – dort gilt das Verhalten der gelisteten Seiten.
+  const spacedMarkersAllowed =
+    typeof location === "undefined" || hostMatches(SPACED_MARKER_DOMAINS);
 
   const debug = (...args) => {
     try {
@@ -691,7 +702,6 @@
   const PARTICIPLE = new Map([
     ["antragstellend", { m:"Antragsteller", f:"Antragstellerin", pl:"Antragsteller" }],
     ["anwohnend",      { m:"Anwohner",      f:"Anwohnerin",      pl:"Anwohner"      }],
-    ["antragstellend", { m:"Antragsteller", f:"Antragstellerin", pl:"Antragsteller" }],
     ["ausbildend",     { m:"Ausbilder",     f:"Ausbilderin",     pl:"Ausbilder"     }],
     ["beratend",       { m:"Berater",       f:"Beraterin",       pl:"Berater"       }],
     ["besuchend",      { m:"Besucher",      f:"Besucherin",      pl:"Besucher"      }],
@@ -707,7 +717,6 @@
     ["pendelnd",       { m:"Pendler",       f:"Pendlerin",       pl:"Pendler"       }],
     ["pflegend",       { m:"Pfleger",       f:"Pflegerin",       pl:"Pfleger"       }],
     ["promovierend",   { m:"Doktorand",     f:"Doktorandin",     pl:"Doktoranden"   }],
-    ["protestierend",  { m:"Protestant",    f:"Protestantin",    pl:"Protestanten"  }],
     ["radfahrend",     { m:"Radfahrer",     f:"Radfahrerin",     pl:"Radfahrer"     }],
     ["studierend",     { m:"Student",       f:"Studentin",       pl:"Studenten"     }],
     ["teilnehmend",    { m:"Teilnehmer",    f:"Teilnehmerin",    pl:"Teilnehmer"    }],
@@ -1073,12 +1082,14 @@
   //               "Lautsprecher: innen"): nur bei sicher belegter Person.
   //   "no"      – normales Deutsch: Leerzeichen + großes "I" (Satzanfang nach Doppelpunkt),
   //               Singular mit Leerzeichen vor einem weiteren Wort ("Termin: in Kürze")
-  //               oder "innen und außen".
+  //               oder "innen und außen". Außerhalb von SPACED_MARKER_DOMAINS jede
+  //               Marker-Form mit Leerzeichen (Klammerformen ausgenommen).
   // Durchgängig großgeschriebene Endungen ("MITARBEITER:INNEN") zählen als klein.
   function markerFormKind(marker, gap, suffix, singular, rest) {
     const capital = suffix[0] === "I" && /[a-z]/.test(suffix);
     const beforeWord = /^\s+\p{L}/u.test(rest);
     if (gap !== "") {
+      if (!spacedMarkersAllowed && marker !== "(") return "no";
       if (capital || (singular && beforeWord)) return "no";
       if (!singular && /^\s*(?:und|oder|sowie|wie|&|\/|,)?\s*außen/iu.test(rest)) return "no";
       return "strict";
@@ -2253,6 +2264,7 @@
       PSEUDO_FEM,
       PARTICIPLE,
       FALSE_POSITIVES,
+      SPACED_MARKER_DOMAINS,
       wiktCache,
       hasGenderCandidate,
       hasDoubletCandidate,

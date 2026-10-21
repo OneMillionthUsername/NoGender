@@ -1,6 +1,6 @@
 {
   "name": "nogender",
-  "version": "3.1.2",
+  "version": "3.2.0",
   "description": "Firefox-Erweiterung, die künstlich gegenderte Formen auf Webseiten durch natürliches Deutsch ersetzt. Läuft lokal, mit optionalem Wiktionary-Lookup.",
   "private": true,
   "license": "GPL-3.0-or-later",
@@ -15,6 +15,12 @@
     "lint:ext": "web-ext lint --source-dir=.",
     "start": "web-ext run --source-dir=.",
     "build": "web-ext build --source-dir=. --overwrite-dest"
+  },
+  "webExt": {
+    "ignoreFiles": [
+      "test", "web-ext-artifacts", "nogender.js.bak", "package.json", "package-lock.json",
+      "eslint.config.js", "README.md", "todo.txt"
+    ]
   },
   "engines": {
     "node": ">=18"

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Tests für die reine Normalisierungslogik (synchroner Pfad, ohne Wiktionary-Lookup
 // und ohne DOM). Läuft mit dem eingebauten Node-Test-Runner: `npm test`.
+// Ohne `location` gilt das Verhalten der SPACED_MARKER_DOMAINS: Leerzeichen-Formen
+// ("Lehrer: innen") werden aufgelöst. Andere Seiten prüft spaced-domain.test.js.
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
