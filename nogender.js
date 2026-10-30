@@ -93,6 +93,7 @@
 //   normalizeSplitMarkers*   Behandelt Formen, die HTML über mehrere Tags verteilt
 //                            (z. B. "Lehrer<span>:innen</span>").
 //   normalizeElementAttributes / normalizeAllAttributes  Normalisiert title, alt, aria-label …
+//                            (auch placeholder an <input>; nur in contenteditable nicht).
 //   normalizeDocumentTitle / normalizeMetaTags           Seitentitel & <meta>-Tags.
 //   normalizeJsonLd*         Strukturierte Daten (JSON-LD) im <script>.
 //   normalizeSvgText         Text innerhalb von SVG-Grafiken.
@@ -551,9 +552,15 @@
   // <pre><code><span>…) wird nie verändert.
   const SKIP_SELECTOR = "script,style,noscript,textarea,input,select,code,pre,kbd,samp";
 
+  // Bewusst NICHT enthalten: "value". An <input type="submit|button|reset"> wäre es die
+  // Beschriftung, an Textfeldern aber der (vorausgefüllte) Feldinhalt. Erst ergänzen –
+  // dann nur für Button-Typen –, wenn es auf echten Seiten Probleme macht.
   const NORMALIZABLE_ATTRIBUTES = [
     "title","alt","placeholder","aria-label",
     "aria-description","data-tooltip","data-title","data-original-title","label",
+    "aria-placeholder","aria-valuetext","aria-roledescription","data-placeholder",
+    "data-bs-title","data-bs-content","data-content","data-tippy-content",
+    "data-tip","data-tooltip-content",
   ];
 
   const NORMALIZABLE_SELECTOR = NORMALIZABLE_ATTRIBUTES.map(a => "[" + a + "]").join(",");
@@ -566,6 +573,13 @@
       el = el.parentNode;
     }
     return false;
+  }
+
+  // Attribute wie placeholder/title/aria-label setzt die Seite selbst – auch an
+  // <input>/<textarea>. Nur innerhalb eines contenteditable-Bereichs können sie aus
+  // Nutzereingaben stammen; der editierbare Wurzelknoten selbst gehört noch zur Seite.
+  function isUserEditableAttributeHost(el) {
+    return !!el.parentElement?.isContentEditable;
   }
 
   function preserveCase(source, replacement) {
@@ -1949,7 +1963,7 @@
   // ─────────────────────────────────────────────────────────────
 
   function normalizeElementAttributes(element) {
-    if (!element?.hasAttributes || isEditableNode(element)) return;
+    if (!element?.hasAttributes || isUserEditableAttributeHost(element)) return;
     for (const attr of NORMALIZABLE_ATTRIBUTES) {
       if (!element.hasAttribute(attr)) continue;
       const orig = element.getAttribute(attr);
@@ -2123,9 +2137,7 @@
       rafId = null;
       if (isFlushing || !active) return;
 
-      for (const el of pendingAttrs) {
-        if (!isEditableNode(el)) normalizeElementAttributes(el);
-      }
+      for (const el of pendingAttrs) normalizeElementAttributes(el);
       pendingAttrs.clear();
 
       const texts = [...pendingText];
@@ -2156,7 +2168,11 @@
     const observer = new MutationObserver(mutations => {
       for (const m of mutations) {
         for (const node of m.addedNodes) {
-          if (isEditableNode(node)) continue;
+          if (isEditableNode(node)) {
+            // Inhalt bleibt tabu, Attribute (z. B. placeholder) werden trotzdem normalisiert.
+            if (node.nodeType === Node.ELEMENT_NODE) pendingAttrs.add(node);
+            continue;
+          }
           if (node.nodeType === Node.TEXT_NODE && !processed.has(node))
             pendingText.add(node);
           else if (node.nodeType === Node.ELEMENT_NODE && !processed.has(node))
@@ -2179,7 +2195,6 @@
         }
         if (m.type === "attributes" &&
             m.target.nodeType === Node.ELEMENT_NODE &&
-            !isEditableNode(m.target) &&
             NORMALIZABLE_ATTRIBUTES.includes(m.attributeName)) {
           pendingAttrs.add(m.target);
         }
