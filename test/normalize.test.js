@@ -536,13 +536,32 @@ test("Doppelnennung als Pronomenpaar", () => {
   expectDoublet("jeder und jede Lehrerin", "jeder und jede Lehrerin");   // Nomen richtet sich nach "jede"
 });
 
+test("Doppelnennung mit Zahl oder Anteil davor – gilt für beide Glieder", () => {
+  expectDoublet("rund 40 Lehrerinnen und Lehrer", "rund 40 Lehrer");
+  expectDoublet("Es kamen zwanzig Lehrerinnen und Lehrer", "Es kamen zwanzig Lehrer");
+  expectDoublet("Tausende Bürgerinnen und Bürger demonstrierten", "Tausende Bürger demonstrierten");
+  expectDoublet("Rund 70 % der Lehrerinnen und Lehrer sind zufrieden",
+                "Rund 70 % der Lehrer sind zufrieden");
+  // Sätze von tagesschau.de und rbb24.de
+  expectDoublet("Es würden rund 1.500 Polizistinnen und Polizisten auf den Straßen sein",
+                "Es würden rund 1.500 Polizisten auf den Straßen sein");
+  expectDoublet("dass nur etwa fünf bis höchstens zehn Prozent der Wählerinnen und Wähler überhaupt " +
+                "offen für einen Parteiwechsel sind",
+                "dass nur etwa fünf bis höchstens zehn Prozent der Wähler überhaupt " +
+                "offen für einen Parteiwechsel sind");
+  expectDoublet("Unter den Wählerinnen und Wählern, die einen republikanischen Kandidaten wählen " +
+                "wollen, möchten weniger als die Hälfte (48 Prozent) ihr Kreuz als Stimme für Trump " +
+                "gewertet wissen.",
+                "Unter den Wählern, die einen republikanischen Kandidaten wählen " +
+                "wollen, möchten weniger als die Hälfte (48 Prozent) ihr Kreuz als Stimme für Trump " +
+                "gewertet wissen.");
+});
+
 // Ausschlussgruppe: Hier trägt die Nennung beider Formen Information, oder die Kürzung
 // wäre grammatisch nicht sicher – der Text bleibt unverändert.
 test("Ausschlussgruppe: Zahlen und Mengen", () => {
   for (const s of ["40 Lehrerinnen und 60 Lehrer", "4 Lehrerinnen und 4 Lehrer",
-                   "zwei Ärztinnen und drei Ärzte", "rund 40 Lehrerinnen und Lehrer",
-                   "Es kamen zwanzig Lehrerinnen und Lehrer",
-                   "Tausende Bürgerinnen und Bürger demonstrierten",
+                   "zwei Ärztinnen und drei Ärzte", "rund 40 Lehrerinnen und 60 Lehrer",
                    "Lehrerinnen und Lehrer (40 bzw. 60)", "Lehrer und Lehrerinnen: 40 bzw. 60",
                    "beide Lehrerinnen und beide Lehrer"]) {
     expectDoublet(s, s);
@@ -554,7 +573,7 @@ test("Ausschlussgruppe: Vergleich, Anteile, Geschlecht als Thema", () => {
                    "Ärztinnen und Ärzte verdienen unterschiedlich viel",
                    "das Verhältnis von Lehrerinnen und Lehrern",
                    "Der Anteil der Professorinnen und Professoren steigt",
-                   "Rund 70 % der Lehrerinnen und Lehrer sind zufrieden",
+                   "Die Mehrheit der Lehrerinnen und Lehrer ist zufrieden",
                    "Bei den Ärztinnen und Ärzten sind Frauen in der Mehrheit",
                    "Gleichberechtigung für Bürgerinnen und Bürger",
                    "Lehrerinnen und Lehrer verdienen gleich viel",

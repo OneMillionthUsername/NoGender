@@ -78,12 +78,14 @@ keine Doppelnennungen.
 Im Zweifel bleibt der Text unverändert – lieber eine Doppelnennung zu viel als eine
 verfälschte Aussage. Diese **Ausschlussgruppe** wird nie gekürzt:
 
-- **Zahlen und Mengen**: `40 Lehrerinnen und 60 Lehrer`, `rund 40 Lehrerinnen und Lehrer`,
-  `Tausende Bürgerinnen und Bürger`, `Lehrerinnen und Lehrer (40 bzw. 60)`.
+- **Eigene Zahlen je Glied**: `40 Lehrerinnen und 60 Lehrer`, `Lehrerinnen und Lehrer (40 bzw. 60)`.
+  Eine Zahl nur vor dem ersten Glied gilt für beide und wird gekürzt: `rund 1.500 Polizistinnen
+  und Polizisten` → `rund 1.500 Polizisten`, `zehn Prozent der Wählerinnen und Wähler` →
+  `zehn Prozent der Wähler`.
 - **Vergleich, Anteile, Geschlecht als Thema** im selben Satz: `Unterschiede zwischen
   Ärztinnen und Ärzten`, `der Anteil der Professorinnen und Professoren`, Sätze mit
-  „Frauen", „Männer", „weiblich", „Geschlecht", „Gleichberechtigung", „%" usw. – auch Texte
-  über das Gendern selbst (`Doppelnennungen wie Bürgerinnen und Bürger`).
+  „Frauen", „Männer", „weiblich", „Geschlecht", „Gleichberechtigung", „Mehrheit" usw. – auch
+  Texte über das Gendern selbst (`Doppelnennungen wie Bürgerinnen und Bürger`).
 - **Betonung, Auswahl, Zuordnung**: `sowohl … als auch`, `entweder … oder`, `egal ob
   Lehrerin oder Lehrer`, Fragen mit „oder" (`Eher Lehrerinnen oder Lehrer?`), `Lehrerinnen
   bzw. Lehrer erhalten 100 bzw. 200 Euro`, Paare (`Ehepaare aus Ärztinnen und Ärzten`).

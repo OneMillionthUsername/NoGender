@@ -1458,8 +1458,10 @@
     return w.startsWith(s) && mascEndings(plural).includes(w.slice(s.length));
   }
 
-  // Ausschlussgruppe, Zahlen: Mit Zahl oder Menge trägt jede Form eigene Information
-  // ("40 Lehrerinnen und 60 Lehrer", "rund 40 Lehrerinnen und Lehrer").
+  // Ausschlussgruppe, Zahlen: Hat jedes Glied eine eigene Zahl oder Menge, trägt jede Form
+  // eigene Information ("40 Lehrerinnen und 60 Lehrer", "Lehrerinnen und Lehrer (40 bzw. 60)").
+  // Eine Zahl nur vor dem ersten Glied gilt für beide zusammen, dann wird gekürzt
+  // ("rund 40 Lehrerinnen und Lehrer" → "rund 40 Lehrer").
   const COUNT_UNITS = "zwei|drei|vier|fünf|sechs|sieben|acht|neun|zehn|elf|zwölf|" +
     "(?:drei|vier|fünf|sech|sieb|acht|neun)zehn|(?:zwan|vier|fünf|sech|sieb|acht|neun)zig|dreißig";
   const reCountWord = new RegExp(
@@ -1477,8 +1479,9 @@
     "einerseits", "andererseits", "jeweils", "getrennt", "separat", "gemischt", "paar", "ehepaar",
     // Betonung beider Gruppen
     "sowohl", "weder", "entweder", "gleichermaßen",
-    // Anteile und Statistik
-    "mehrheit", "minderheit", "überwiegend", "anteil", "prozent", "promille", "quote", "statisti",
+    // Anteile und Statistik. Prozentangaben fehlen bewusst: Sie gelten meist der ganzen Gruppe
+    // ("zehn Prozent der Wählerinnen und Wähler").
+    "mehrheit", "minderheit", "überwiegend", "anteil", "quote", "statisti",
     // Geschlecht als Thema, auch in Texten über das Gendern selbst
     "geschlecht", "gender", "weiblich", "männlich", "feminin", "maskulin", "generisch",
     "doppelnennung", "paarform", "beidnennung", "gleichstell", "gleichberecht", "gleichbehandl",
@@ -1487,7 +1490,7 @@
   ];
   const reDoubletCue = new RegExp(
     "(?<![\\p{L}])(?:" + DOUBLET_CUES.join("|") + ")" +
-    "|(?<![\\p{L}])(?:beide[mnrs]?|beiderlei|gleich|gleiche[mnrs]?|eher)(?![\\p{L}])|%",
+    "|(?<![\\p{L}])(?:beide[mnrs]?|beiderlei|gleich|gleiche[mnrs]?|eher)(?![\\p{L}])",
     "iu");
   // Personengruppen nach Geschlecht, nur großgeschrieben ("Frauen", "Frauenanteil", "Mädchen").
   const reDoubletGenderNoun = /(?<![\p{L}])(?:Frauen|Männer|Mädchen|Jungen|Jungs)/u;
@@ -1589,9 +1592,8 @@
     if (/["„“”‚‘'»«›‹]/.test(text[start - 1] ?? "") && /["“”‘’'»«›‹]/.test(text[end] ?? "")) return true;
     const before = wordsBefore(text, start, 3).map(w => w.word.toLowerCase());
     const after = text.slice(end, end + 40);
-    // Zahlen davor oder direkt danach: "rund 40 Lehrerinnen und Lehrer",
-    // "Lehrerinnen und Lehrer (40 bzw. 60)"
-    if (before.some(w => reCountWord.test(w))) return true;
+    // Zahlen direkt danach ordnen zu: "Lehrerinnen und Lehrer (40 bzw. 60)". Eigene Zahlen
+    // je Glied prüft modsAgree. Eine Zahl davor gilt für beide und verhindert die Kürzung nicht.
     const next = after.match(/^\s*[(:]?\s*([^\s.,;:!?)]+)/u)?.[1];
     if (next && reCountWord.test(next)) return true;
     // Einräumung und Auswahlfrage: "egal ob Lehrerin oder Lehrer", "Lehrerinnen oder Lehrer –
